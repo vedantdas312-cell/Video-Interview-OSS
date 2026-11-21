@@ -114,7 +114,6 @@ export default function App() {
   useEffect(() => {
     try { sessionStorage.setItem("interview-feedback-account", account); } catch { /* Tab memory is sufficient. */ }
   }, [account]);
-  const [step, setStep] = useState(1);
   const [mode, setMode] = useState<Mode>("solicitor");
   const [questionCount, setQuestionCount] = useState(3);
   const [answerSeconds, setAnswerSeconds] = useState(ANSWER_SECONDS);
@@ -394,7 +393,6 @@ export default function App() {
     if (working || screen === "interview") return;
     release();
     setDraft(null);
-    if (next === "home") setStep(1);
     setScreen(next);
     setError("");
   };
@@ -483,42 +481,26 @@ export default function App() {
             </div>
             <div className="home-grid">
               <section className="session-card">
-                <div className="card-topline"><span className="eyebrow">{unfinished ? "SAVED ROUND" : `STEP ${step} OF 3`}</span></div>
                 {unfinished && session ? <><h2>Continue your round</h2>
                   <p>{modes[session.mode ?? "solicitor"].name} · {session.questions.length} questions · {session.answerSeconds}s per answer</p></> :
                   <>
-                    <h2>{["Connect feedback", "Choose your field"][step - 1]}</h2>
-                    {step === 1 && accountFields}
-                    {step === 2 && <div className="practice-fields"><label>Interview mode
+                    <h2>Choose your field</h2>
+                    <div className="practice-fields"><label>Interview mode
                       <select aria-label="Interview mode" value={mode} onChange={e => setMode(e.target.value as Mode)}>
                         {Object.entries(modes).map(([id, item]) => <option key={id} value={id}>{item.name}</option>)}
                       </select></label>
                       <p>{mode === "solicitor" ? "Questions from the TCLA practice bank." : mode === "pe" ? "Practise questions adapted from London candidate reports and published private equity interview banks." : "Original practice prompts based on public preparation material. Actual interview questions vary."} <a href={modes[mode].url} target="_blank" rel="noreferrer">{modes[mode].source}</a></p>
-                    </div>}
-                    {step > 1 && <button className="text-button" onClick={() => setStep(step-1)}>Back</button>}
+                    </div>
                   </>}
                 <button
                   className="primary start-button"
-                  disabled={!loaded || connecting || (!unfinished && !hasAccount)}
-                  onClick={() => unfinished || step === 2 ? openRound(unfinished) : setStep(step+1)}
+                  disabled={!loaded}
+                  onClick={() => openRound(unfinished)}
                 >
-                  {connecting ? (
-                    <>
-                      <LoaderCircle className="spin" size={18} />
-                      Connecting camera…
-                    </>
-                  ) : (
-                    <>
-                      {unfinished ? "Continue your session" : step === 2 ? "Open practice" : "Continue"}
-                      <ArrowRight size={18} />
-                    </>
-                  )}
+                  {unfinished ? "Continue your session" : "See first question"}
+                  <ArrowRight size={18} />
                 </button>
-                <p className="small centered">
-                  {unfinished
-                    ? `${session!.answers.length} of ${session!.questions.length} answers saved on this device.`
-                    : step === 2 ? "Read the first question before enabling your camera." : ""}
-                </p>
+                {unfinished && session && <p className="small centered">{session.answers.length} of {session.questions.length} answers saved on this device.</p>}
                 {session && session.answers.length === session.questions.length && (
                   <>
                   <button
@@ -609,6 +591,9 @@ export default function App() {
               <h1>{session.questions[session.answers.length].text}</h1>
               {session.questions[session.answers.length].source && <p className="small">Adapted from <a href={session.questions[session.answers.length].source!.url} target="_blank" rel="noreferrer">{session.questions[session.answers.length].source!.label}</a></p>}
             </div>
+            <p className="small">{hasAccount
+              ? `After your round, ${account === "openrouter" ? "OpenRouter" : "Publik"} and its AI provider review your transcript and selected camera images. This uses your ${account === "openrouter" ? "OpenRouter" : "Publik"} credits.`
+              : "You can record now. To get AI feedback, add your key in Settings."}</p>
             <section className="camera-off"><Camera size={32}/><p>Camera is off</p></section>
             <button className="primary start-button" disabled={connecting} onClick={() => void enableCamera()}>{connecting ? "Connecting camera…" : "Enable camera and microphone"}</button>
           </section>
@@ -925,9 +910,9 @@ export default function App() {
         <Dialog.Portal>
           <Dialog.Overlay className="modal-overlay" />
           <Dialog.Content className="settings-dialog">
-            <Dialog.Title>Make practice your own.</Dialog.Title>
+            <Dialog.Title>Practice settings</Dialog.Title>
             <Dialog.Description>
-              Check your session format and connect feedback when you’re ready.
+              Manage your saved round and choose which account pays for AI feedback.
             </Dialog.Description>
             <Dialog.Close className="close-modal" aria-label="Close settings">
               <X size={20} />

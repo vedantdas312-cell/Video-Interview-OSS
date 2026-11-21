@@ -62,7 +62,7 @@ npm run dev
 Open **[http://127.0.0.1:4310](http://127.0.0.1:4310)**. The local API runs on port 4311. The first transcription may download Whisper's base model weights.
 
 1. Sign in with Publik in your browser. The app links its installation credential to your account.
-2. Choose the linked account or enter a personal Publik or OpenRouter key. The key field includes a link to the provider dashboard.
+2. Your signed-in Publik account covers AI feedback by default. If you prefer to pay with your own Publik or OpenRouter API key, open Settings.
 3. Choose your field and read the first question. Enable your camera and microphone. Under the preview, choose the duration, questions per round and attempts. Press Start recording when ready.
 4. Record each answer. With multiple attempts you can keep the current take or replace it. The last permitted take advances automatically.
 5. Review the feedback after the final answer, replay the evidence and download any recordings you want to keep.

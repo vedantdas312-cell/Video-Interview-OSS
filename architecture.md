@@ -241,7 +241,7 @@ Git publication is a separate boundary. `.gitignore` excludes media, secrets, so
 | `TRANSCRIBE_PYTHON` | Explicit Python executable containing faster-whisper; set in the launching shell. |
 | `FFMPEG_PATH` | Explicit ffmpeg executable; otherwise `ffmpeg` on PATH. |
 | `NODE_ENV=production` | Serve the built frontend from Express. Set by `npm start`. |
-| OpenRouter key | Enter through initial setup or Settings. |
+| OpenRouter key | Enter through Settings. |
 | Models | Constants in `server/schema.ts`; changes require validation of request/output compatibility. |
 | Ports | Currently fixed by npm scripts, Vite proxy configuration and server entrypoint. |
 

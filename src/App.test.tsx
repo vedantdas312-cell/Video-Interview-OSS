@@ -146,7 +146,7 @@ async function enterApiKey() {
     'button[aria-label="Practice settings"]',
   )!);
   await flush();
-  await select("Feedback account", "openrouter", document.querySelector('[role="dialog"]')!);
+  await select("Pay for AI feedback with", "openrouter", document.querySelector('[role="dialog"]')!);
   const input = document.querySelector('[role="dialog"]')!.querySelector<HTMLInputElement>('input[type="password"]');
   if (!input) throw new Error("API key input was not rendered");
   await act(async () => {
@@ -224,8 +224,9 @@ describe("App session flow", () => {
   it("records three answers before opening review and persists all three", async () => {
     act(() => root.render(<App />));
     await flush();
-    await click(buttonByText("Continue"));
-    await click(buttonByText("Open practice"));
+    expect(container.textContent).not.toContain("Connect feedback");
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+    await click(buttonByText("See first question"));
     await flush();
     await click(buttonByText("Enable camera"));
 
@@ -249,9 +250,8 @@ describe("App session flow", () => {
 
   it("applies the selected mode, recording limit, attempts and question count to the round", async () => {
     act(() => root.render(<App />)); await flush();
-    await click(buttonByText("Continue"));
     await select("Interview mode","pe");
-    await click(buttonByText("Open practice"));
+    await click(buttonByText("See first question"));
     expect(container.textContent).toContain("Camera is off");
     expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
     const firstQuestion = container.querySelector(".question-heading h1")?.textContent;
@@ -329,7 +329,7 @@ describe("App session flow", () => {
     await click(buttonByText("Delete permanently"));
 
     expect(deleteSavedSessionMock).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain("Connect feedback");
+    expect(container.textContent).toContain("Choose your field");
     expect(document.body.textContent).not.toContain("Delete saved session");
   });
 
