@@ -10,6 +10,7 @@ import { assessSession } from './session-assessment.ts';
 import { transcriptionAvailability, transcribeRecording } from './transcription.ts';
 
 export function createApp(dependencies: {
+  gate?: express.RequestHandler;
   assess?: typeof assess;
   transcribe?: typeof transcribeRecording;
   availability?: typeof transcriptionAvailability;
@@ -30,6 +31,7 @@ export function createApp(dependencies: {
     next();
   });
   app.use(express.json({ limit: '14mb' }));
+  if (dependencies.gate) app.use(dependencies.gate);
   app.get('/api/health', async (_req, res, next) => {
     try { res.json({ ok: true, transcription: await (dependencies.availability ?? transcriptionAvailability)(),
       models: APPROVED_MODELS, defaultModel: DEFAULT_MODEL,
@@ -87,7 +89,7 @@ export function createApp(dependencies: {
   app.use((_req, _res, next) => next(new ApiError(404, 'NOT_FOUND', 'API route not found.')));
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (error instanceof ApiError) return res.status(error.status).json({ error: {
-      code: error.code, message: error.message,
+      code: error.code, message: error.message, ...(error.topUpUrl && {topUpUrl: error.topUpUrl}),
       ...(error.upstreamStatus ? { upstreamStatus: error.upstreamStatus } : {}),
     } });
     if (error instanceof multer.MulterError) {

@@ -2,7 +2,7 @@
 
 Version: 2026-09-28.3
 
-This is the project’s practice coaching rubric. It is not an official TCLA marking scheme. Both analysis prompts use this document, applying only the rules that their inputs can support. The original question bank supplies the exact question and category.
+This is the project’s practice coaching rubric. It is not an official TCLA marking scheme. Both analysis prompts use this document, applying only the rules that their inputs can support. The local catalog supplies the exact question and category. Apply commercial-law guidance only to solicitor questions. For finance modes, use the role and criterion guidance supplied with the question.
 
 ## Shared practice principles
 

@@ -11,6 +11,7 @@ export type RecorderResult = {
 
 type RecorderProps = {
   stream: MediaStream;
+  answerSeconds?: number;
   onComplete: (result: RecorderResult) => void;
   onError: (message: string) => void;
 };
@@ -33,6 +34,7 @@ function formatClock(seconds: number): string {
  */
 export default function Recorder({
   stream,
+  answerSeconds = ANSWER_SECONDS,
   onComplete,
   onError,
 }: RecorderProps) {
@@ -207,7 +209,7 @@ export default function Recorder({
         recordingEndedAtRef.current = 0;
         phaseRef.current = 'recording';
         setPhase('recording');
-        const duration = ANSWER_SECONDS;
+        const duration = answerSeconds;
         setRemainingSeconds(Math.ceil(duration));
 
         const sampleIntervalMs = Math.max(
@@ -294,7 +296,7 @@ export default function Recorder({
       endedTracks.forEach((track) => track.removeEventListener('ended', handleTrackEnded));
       if (video) video.srcObject = null;
     };
-  }, [stream]);
+  }, [stream, answerSeconds]);
 
   const startCountdown = () => startRecordingRef.current();
   const finishEarly = () => stopRecordingRef.current();

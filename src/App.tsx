@@ -1,3 +1,5 @@
+import FeedbackAccount, {type Account} from "./components/FeedbackAccount";
+import { modes, financeQuestions, MAX_QUESTIONS, type Mode } from "./data/modes";
 import { ANSWER_SECONDS } from './lib/timing';
 import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -5,7 +7,6 @@ import {
   ArrowUpRight,
   ArrowRight,
   Check,
-  ChevronRight,
   Camera,
   Mic,
   Settings2,
@@ -16,7 +17,6 @@ import {
   LoaderCircle,
   Video,
   Sparkles,
-  Clock3,
   Search,
 } from "lucide-react";
 import Recorder from "./components/Recorder";
@@ -33,6 +33,8 @@ import {
   type Session,
   type Transcript,
   type Assessment,
+  type Answer,
+  PaymentRequired,
   type SessionAssessment,
 } from "./lib/session";
 
@@ -115,6 +117,27 @@ export default function App() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deletingSession, setDeletingSession] = useState(false);
   const [apiKey, setApiKey] = useState("");
+  const [account, setAccount] = useState<Account>(() => {
+    try {
+      const saved = sessionStorage.getItem("interview-feedback-account");
+      if (saved === "publik" || saved === "openrouter") return saved;
+    } catch { /* Storage can be unavailable in a private window. */ }
+    return "publik-linked";
+  });
+  useEffect(() => {
+    try { sessionStorage.setItem("interview-feedback-account", account); } catch { /* Tab memory is sufficient. */ }
+  }, [account]);
+  const [step, setStep] = useState(1);
+  const [mode, setMode] = useState<Mode>("solicitor");
+  const [questionCount, setQuestionCount] = useState(3);
+  const [answerSeconds, setAnswerSeconds] = useState(ANSWER_SECONDS);
+  const [attempts, setAttempts] = useState(1);
+  const [retaking, setRetaking] = useState(false);
+  const [payment, setPayment] = useState<{message: string; url: string} | null>(null);
+  const hasAccount = account === "publik-linked" || (account === "publik" ? /^pk_[A-Za-z0-9_-]+$/ : /^sk-[A-Za-z0-9_-]+$/).test(apiKey.trim());
+  const auth = account === "publik-linked" ? {provider: account} : {provider: account, apiKey: apiKey.trim()};
+  const accountFields = <FeedbackAccount account={account} apiKey={apiKey} onKey={setApiKey}
+    onAccount={value => { setAccount(value); setApiKey(""); setPayment(null); }} />;
   const [working, setWorking] = useState(false);
   const [progress, setProgress] = useState("");
   const [selectedAnswer, setSelectedAnswer] = useState(0);
@@ -213,13 +236,15 @@ export default function App() {
         const next: Session = {
           id: crypto.randomUUID(),
           createdAt: new Date().toISOString(),
-          questions: selectSessionQuestions(),
+          questions: selectSessionQuestions(mode, questionCount),
+          mode, attempts,
           answers: [],
           prepSeconds: 0,
-          answerSeconds: ANSWER_SECONDS,
+          answerSeconds,
         };
         await persist(next);
       }
+      setRetaking(false);
       setScreen("setup");
     } catch (e) {
       release();
@@ -235,38 +260,33 @@ export default function App() {
       setConnecting(false);
     }
   };
-  const recorded = async (result: {
-    blob: Blob;
-    duration: number;
-    frames: { timestamp: number; dataUrl: string }[];
-  }) => {
+  const acceptTake = async (answer: Answer) => {
     if (!session || busy.current) return;
     busy.current = true;
-    const next = {
-      ...session,
-      answers: [
-        ...session.answers,
-        { ...result, question: session.questions[session.answers.length] },
-      ],
-    };
-    // Switch views before publishing the third answer; there is no question 4.
-    if (next.answers.length === 3) {
-      setScreen("review");
-      setSelectedAnswer(0);
-      release();
-    }
+    setRetaking(false);
+    const next = { ...session, pendingTake: undefined, answers: [...session.answers, answer] };
+    const complete = next.answers.length === next.questions.length;
+    if (complete) { setScreen("review"); setSelectedAnswer(0); release(); }
     await persist(next);
     busy.current = false;
-    if (next.answers.length === 3) {
-      if (apiKey.trim()) void analyse(next);
-    }
+    if (complete && hasAccount) void analyse(next);
+  };
+  const recorded = async (result: Pick<Answer, "blob" | "duration" | "frames">) => {
+    if (!session || busy.current) return;
+    const answer = { ...result, question: session.questions[session.answers.length] };
+    const used = (session.pendingTake?.used ?? 0) + 1;
+    if (used >= (session.attempts ?? 1)) return acceptTake(answer);
+    busy.current = true;
+    setRetaking(false);
+    await persist({ ...session, pendingTake: { answer, used } });
+    busy.current = false;
   };
   const reviewWholeSession = async (current: Session, signal: AbortSignal): Promise<Session> => {
     setProgress("Putting your whole-session feedback together");
     try {
       const sessionAssessment = await fetch('/api/session-assess', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
-        body: JSON.stringify({ apiKey: apiKey.trim(), answers: current.answers.map(a => ({
+        body: JSON.stringify({ ...auth, questionCount: current.questions.length, answers: current.answers.map(a => ({
           question: { id: a.question.id, text: a.question.text, category: a.question.category },
           assessment: a.assessment, transcript: a.transcript,
         })) }),
@@ -274,12 +294,13 @@ export default function App() {
       return { ...current, sessionAssessment, sessionReviewError: undefined };
     } catch (e) {
       if (signal.aborted) throw e;
+      if (e instanceof PaymentRequired) setPayment(e.payment);
       return { ...current, sessionReviewError: e instanceof Error ? e.message : 'The session review could not be completed.' };
     }
   };
   const gradeSession = async () => {
     if (!session || busy.current) return;
-    if (!apiKey.trim()) { pendingReview.current = { kind: 'session' }; setSettingsOpen(true); return; }
+    if (!hasAccount) { pendingReview.current = { kind: 'session' }; setSettingsOpen(true); return; }
     busy.current = true; setWorking(true); setError('');
     const controller = new AbortController(); analysisAbort.current = controller;
     try { await persist(await reviewWholeSession(session, controller.signal)); }
@@ -287,8 +308,8 @@ export default function App() {
     finally { busy.current = false; setWorking(false); setProgress(''); analysisAbort.current = null; }
   };
   const analyse = async (current: Session, onlyIndex?: number, refreshAll = false) => {
-    if (busy.current || current.answers.length !== 3) return;
-    if (!apiKey.trim()) {
+    if (busy.current || current.answers.length !== current.questions.length) return;
+    if (!hasAccount) {
       pendingReview.current = { kind: 'answers', onlyIndex, refreshAll };
       setSettingsOpen(true);
       return;
@@ -309,7 +330,7 @@ export default function App() {
         if (onlyIndex !== undefined ? i !== onlyIndex : !refreshAll && assessmentComplete(answer.assessment)) continue;
         try {
           if (!answer.transcript) {
-            setProgress(`Transcribing answer ${i + 1} of 3`);
+            setProgress(`Transcribing answer ${i + 1} of ${next.questions.length}`);
             const body = new FormData();
             body.append(
               "recording",
@@ -323,13 +344,12 @@ export default function App() {
             }).then(jsonResponse<Transcript>);
             await persist({ ...next, answers: [...next.answers] });
           }
-          setProgress(`Reviewing answer ${i + 1} of 3`);
+          setProgress(`Reviewing answer ${i + 1} of ${next.questions.length}`);
           const reviewed = await fetch("/api/assess", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              apiKey: apiKey.trim(),
-              model: "qwen/qwen3-vl-32b-instruct",
+              ...auth,
               question: {
                 id: answer.question.id,
                 text: answer.question.text,
@@ -342,12 +362,15 @@ export default function App() {
             }),
             signal: controller.signal,
           }).then(jsonResponse<Assessment>);
+          if (reviewed.payment) setPayment(reviewed.payment);
+          delete reviewed.payment;
           answer.assessment = mergeAssessment(answer.assessment, reviewed);
           answer.error = [reviewed.contentError, reviewed.visualError].filter(Boolean).join(' ') || undefined;
           next.sessionAssessment = undefined;
           next.sessionReviewError = undefined;
         } catch (e) {
           if (controller.signal.aborted) throw e;
+          if (e instanceof PaymentRequired) setPayment(e.payment);
           answer.error =
             e instanceof Error
               ? e.message
@@ -376,19 +399,21 @@ export default function App() {
   };
   const completed = session?.answers.filter((a) => assessmentComplete(a.assessment)).length || 0;
   const unfinished =
-    !!session && session.answers.length > 0 && session.answers.length < 3;
+    !!session && (session.answers.length > 0 || !!session.pendingTake) && session.answers.length < session.questions.length;
   const nav = (next: Screen) => {
     if (working || screen === "interview") return;
     release();
+    if (next === "home") setStep(1);
     setScreen(next);
     setError("");
   };
-  const filtered = questions.filter(
+  const bank = [...questions, ...financeQuestions] as typeof questions;
+  const filtered = bank.filter(
     (q) =>
       (category === "All categories" || q.category === category) &&
       q.text.toLowerCase().includes(query.toLowerCase()),
   );
-  const categories = [...new Set(questions.map((q) => q.category))];
+  const categories = [...new Set(bank.map((q) => q.category))];
   return (
     <div className="app-shell">
       <header className="site-header">
@@ -446,11 +471,13 @@ export default function App() {
             </button>
           </div>
         )}
+        {payment && <section role="alert" className="review-status"><p>{payment.message}</p><a href={payment.url} target="_blank" rel="noreferrer">Get a plan</a>
+          <button className="text-button" onClick={() => {setAccount("publik"); setApiKey(""); setSettingsOpen(true); setPayment(null);}}>Use my own key</button></section>}
         {screen === "home" && (
           <>
             <div className="home-heading">
               <div className="eyebrow">
-                <span className="tiny-dot" /> SOLICITOR INTERVIEW PRACTICE
+                <span className="tiny-dot" /> VIDEO INTERVIEW PRACTICE
               </div>
               <h1>
                 Find your words.
@@ -458,48 +485,41 @@ export default function App() {
                 <em>Make them yours.</em>
               </h1>
               <p>
-                Three questions for your next training contract or vacation scheme interview,
-                <br className="desktop-break" /> a moment to think, and feedback
+                Choose a role, set your round, and practise on camera with
+                <br className="desktop-break" /> feedback
                 you can actually use.
               </p>
             </div>
             <div className="home-grid">
               <section className="session-card">
-                <div className="card-topline">
-                  <span className="eyebrow">YOUR PRACTICE SESSION</span>
-                  <span className="soft-badge">
-                    <Clock3 size={13} />
-                    {ANSWER_SECONDS} seconds per answer
-                  </span>
-                </div>
-                <h2>
-                  A little practice.
-                  <br />A stronger next step.
-                </h2>
-                <div className="question-plan">
-                  {[
-                    [
-                      "01",
-                      "Your motivation",
-                      "What brings you to commercial law",
-                    ],
-                    ["02", "Your experience", "A real example of how you work"],
-                    ["03", "About you", "The person behind the application"],
-                  ].map(([n, title, desc]) => (
-                    <div className="plan-row" key={n}>
-                      <span className="number">{n}</span>
-                      <div>
-                        <h3>{title}</h3>
-                        <p>{desc}</p>
-                      </div>
-                      <ChevronRight size={17} />
-                    </div>
-                  ))}
-                </div>
+                <div className="card-topline"><span className="eyebrow">{unfinished ? "SAVED ROUND" : `STEP ${step} OF 3`}</span></div>
+                {unfinished && session ? <><h2>Continue your round</h2>
+                  <p>{modes[session.mode ?? "solicitor"].name} · {session.questions.length} questions · {session.answerSeconds}s per answer</p></> :
+                  <>
+                    <h2>{["Connect feedback", "Choose your interview", "Set up your round"][step - 1]}</h2>
+                    {step === 1 && accountFields}
+                    {step === 2 && <div className="practice-fields"><label>Interview mode
+                      <select aria-label="Interview mode" value={mode} onChange={e => setMode(e.target.value as Mode)}>
+                        {Object.entries(modes).map(([id, item]) => <option key={id} value={id}>{item.name}</option>)}
+                      </select></label>
+                      <p>{mode === "solicitor" ? "Questions from the TCLA practice bank." : "Original practice prompts based on public preparation material. Actual interview questions vary."} <a href={modes[mode].url} target="_blank" rel="noreferrer">{modes[mode].source}</a></p>
+                    </div>}
+                    {step === 3 && <div className="practice-fields">
+                      <p>{modes[mode].name}</p>
+                      <label>Questions per round<select aria-label="Questions per round" value={questionCount} onChange={e => setQuestionCount(Number(e.target.value))}>
+                        {Array.from({length: MAX_QUESTIONS}, (_, i) => <option key={i+1}>{i+1}</option>)}</select></label>
+                      <label>Time per answer<select aria-label="Time per answer" value={answerSeconds} onChange={e => setAnswerSeconds(Number(e.target.value))}>
+                        {[30,60,90,120,180].map(n => <option value={n} key={n}>{n} seconds</option>)}</select></label>
+                      <label>Attempts per question<select aria-label="Attempts per question" value={attempts} onChange={e => setAttempts(Number(e.target.value))}>
+                        {[1,2,3].map(n => <option key={n}>{n}</option>)}</select></label>
+                      <p>The first recording counts as one attempt. Only the take you keep goes into your review.</p>
+                    </div>}
+                    {step > 1 && <button className="text-button" onClick={() => setStep(step-1)}>Back</button>}
+                  </>}
                 <button
                   className="primary start-button"
-                  disabled={!loaded || connecting}
-                  onClick={() => setup(unfinished)}
+                  disabled={!loaded || connecting || (!unfinished && !hasAccount)}
+                  onClick={() => unfinished || step === 3 ? void setup(unfinished) : setStep(step+1)}
                 >
                   {connecting ? (
                     <>
@@ -508,17 +528,17 @@ export default function App() {
                     </>
                   ) : (
                     <>
-                      {unfinished ? "Continue your session" : "Start practice"}
+                      {unfinished ? "Continue your session" : step === 3 ? "Start practice" : "Continue"}
                       <ArrowRight size={18} />
                     </>
                   )}
                 </button>
                 <p className="small centered">
                   {unfinished
-                    ? `${session!.answers.length} of 3 answers saved on this device.`
-                    : `Read at your pace · 5-second countdown · ${ANSWER_SECONDS}-second answers`}
+                    ? `${session!.answers.length} of ${session!.questions.length} answers saved on this device.`
+                    : step === 3 ? "Camera and microphone access comes next." : ""}
                 </p>
-                {session?.answers.length === 3 && (
+                {session && session.answers.length === session.questions.length && (
                   <>
                   <button
                     className="text-button previous-session"
@@ -566,7 +586,7 @@ export default function App() {
                 <span className="feature-icon">
                   <Video size={20} />
                 </span>
-                <h3>Three questions. One session.</h3>
+                <h3>Set your own round.</h3>
                 <p>
                   Prepare, record, and move to the next.
                   <br />
@@ -634,10 +654,10 @@ export default function App() {
                 <div className="setup-divider" />
                 <h3>Here’s what happens next</h3>
                 <p>
-                  You’ll answer three questions, one at a time. You have{" "}
-                  as much time as you need to read. Press Answer now for a 5-second countdown, then answer for up to {ANSWER_SECONDS} seconds. Recording stops automatically at the limit.
+                  Your round has {session.questions.length} {session.questions.length === 1 ? "question" : "questions"}. You have{" "}
+                  as much time as you need to read. Press Answer now for a 5-second countdown, then answer for up to {session.answerSeconds} seconds. Recording stops automatically at the limit.
                 </p>
-                <p>You’ll see your feedback after all three.</p>
+                <p>You’ll see your feedback after the final answer.</p>
                 <button
                   className="primary"
                   onClick={() => {
@@ -649,9 +669,9 @@ export default function App() {
                   <ArrowRight size={18} />
                 </button>
                 <p className="small">
-                  {apiKey
-                    ? "AI review is ready after your third answer."
-                    : "You can add an OpenRouter key after recording."}
+                  {hasAccount
+                    ? "AI review is ready after your last answer."
+                    : "You can choose a feedback account in Settings."}
                 </p>
               </div>
             </div>
@@ -662,7 +682,7 @@ export default function App() {
             <div className="session-progress">
               <span className="eyebrow">YOUR PRACTICE SESSION</span>
               <div>
-                {[0, 1, 2].map((i) => (
+                {session.questions.map((_, i) => (
                   <span
                     key={i}
                     className={
@@ -689,14 +709,19 @@ export default function App() {
             </div>
             <div className="question-heading">
               <span className="eyebrow">
-                QUESTION {session.answers.length + 1} OF 3 ·{" "}
+                QUESTION {session.answers.length + 1} OF {session.questions.length} ·{" "}
                 {shortCategory(
                   session.questions[session.answers.length].category,
                 )}
               </span>
               <h1>{session.questions[session.answers.length].text}</h1>
             </div>
-            <Recorder
+            {session.pendingTake && !retaking ? <section className="session-card"><h2>Keep this take?</h2>
+              <p>Attempt {session.pendingTake.used} of {session.attempts} recorded. A new take replaces this one when it finishes.</p>
+              <button className="primary" onClick={() => void acceptTake(session.pendingTake!.answer)}>Use this take</button>
+              <button className="text-button" onClick={() => setRetaking(true)}>Try again</button>
+            </section> : <Recorder
+              answerSeconds={session.answerSeconds}
               key={`${session.id}-${session.answers.length}`}
               stream={stream}
               onComplete={recorded}
@@ -705,7 +730,7 @@ export default function App() {
                 release();
                 setScreen("home");
               }}
-            />
+            />}
             <p className="interview-footnote">
               <ShieldCheck size={14} /> No feedback between questions. Take this
               one at a time. Leaving keeps completed answers and discards the current recording.
@@ -726,16 +751,16 @@ export default function App() {
                 <h1>
                   {working
                     ? "A moment for reflection."
-                    : completed === 3
+                    : completed === session.questions.length
                       ? "Your next step, a little clearer."
-                      : "Three answers. A good start."}
+                      : "Your round is recorded."}
                 </h1>
                 <p>
                   {working
                     ? "We’re reviewing the content and presentation of each answer."
-                    : completed === 3
+                    : completed === session.questions.length
                       ? "Here’s what to keep, what to work on, and where to begin."
-                      : completed > 0 ? `${completed} of 3 answers reviewed. The remaining answers need another review; your recordings are saved.` : "Your recordings are saved. Get a detailed review when you’re ready."}
+                      : completed > 0 ? `${completed} of ${session.questions.length} answers reviewed. The remaining answers need another review; your recordings are saved.` : "Your recordings are saved. Get a detailed review when you’re ready."}
                 </p>
               </div>
               {!working && (
@@ -757,7 +782,7 @@ export default function App() {
                   <strong>{progress}</strong>
                   <p>Your recordings stay available if you need to retry.</p>
                 </div>
-                <span>{completed} / 3 reviewed</span>
+                <span>{completed} / {session.questions.length} reviewed</span>
                 <button
                   className="text-button"
                   onClick={() => analysisAbort.current?.abort()}
@@ -766,7 +791,7 @@ export default function App() {
                 </button>
               </div>
             ) : (
-              completed < 3 && (
+              completed < session.questions.length && (
                 <div className="review-status">
                   <Sparkles size={24} />
                   <div>
@@ -783,7 +808,7 @@ export default function App() {
                           : !health.transcription.available
                             ? health.transcription.reason ||
                               "Local transcription is unavailable, so review cannot start."
-                            : "AI review sends your transcript and selected frames to OpenRouter and its model provider. Your key stays in memory."}
+                            : "AI review sends your transcript and selected frames to your selected AI provider. Your key stays in memory."}
                     </p>
                   </div>
                   <button
@@ -793,7 +818,7 @@ export default function App() {
                     }
                     onClick={() => analyse(session)}
                   >
-                    {apiKey
+                    {hasAccount
                       ? completed
                         ? "Retry remaining answers"
                         : "Review my answers"
@@ -803,17 +828,17 @@ export default function App() {
                 </div>
               )
             )}
-            {!working && completed === 3 && session.answers.some(a => a.assessment?.score === undefined) && <div className="review-status">
-              <div><strong>Your saved feedback can now include grades.</strong><p>Update all three answers for a clear grade, what worked, what needs work and how to improve.</p></div>
+            {!working && completed === session.questions.length && session.answers.some(a => a.assessment?.score === undefined) && <div className="review-status">
+              <div><strong>Your saved feedback can now include grades.</strong><p>Update all answers for a clear grade, what worked, what needs work and how to improve.</p></div>
               <button className="primary" onClick={() => void analyse(session, undefined, true)}>Update all feedback <ArrowRight size={16} /></button>
             </div>}
-            {!working && completed === 3 && session.sessionAssessment && <button className="text-button rereview-session" onClick={() => void analyse(session, undefined, true)}>Review all answers again</button>}
+            {!working && completed === session.questions.length && session.sessionAssessment && <button className="text-button rereview-session" onClick={() => void analyse(session, undefined, true)}>Review all answers again</button>}
             {session.sessionAssessment && <SessionReview review={session.sessionAssessment} onEvidence={(answerIndex, timestamp) => {
               setSelectedAnswer(answerIndex);
               setEvidenceTarget({ answerIndex, timestamp, nonce: Date.now() });
             }} />}
-            {completed === 3 && !working && !session.sessionAssessment && <div className="review-status">
-              <div><strong>How did the whole session go?</strong><p>Get your overall answer grade, strengths and three priorities for your next solicitor interview practice.</p>
+            {completed === session.questions.length && !working && !session.sessionAssessment && <div className="review-status">
+              <div><strong>How did the whole session go?</strong><p>Get your overall answer grade, strengths and priorities for your next practice round.</p>
               {session.sessionReviewError && <p className="status-warning">{session.sessionReviewError}</p>}</div>
               <button className="primary" onClick={() => void gradeSession()}>Review whole session <ArrowRight size={16} /></button>
             </div>}
@@ -869,7 +894,7 @@ export default function App() {
               <span className="eyebrow">THE QUESTION BANK</span>
               <h1>A little less unexpected.</h1>
               <p>
-                shout out to TCLA for these :)
+                Solicitor questions come from TCLA. Finance questions are original practice prompts based on the sources below.
               </p>
             </div>
             <div className="library-filters">
@@ -906,7 +931,7 @@ export default function App() {
                     <span className="eyebrow">{q.category}</span>
                     <h3>{q.text}</h3>
                     <p>
-                      Source page {q.sourcePage}
+                      {q.mode ? <a href={modes[q.mode].url} target="_blank" rel="noreferrer">{modes[q.mode].source}</a> : `TCLA · page ${q.sourcePage}`}
                       {!q.defaultEligible
                         ? " · Explore independently; not in the default session pool"
                         : ""}
@@ -953,36 +978,13 @@ export default function App() {
             <Dialog.Close className="close-modal" aria-label="Close settings">
               <X size={20} />
             </Dialog.Close>
-            <p className="small">Each question has a fixed {ANSWER_SECONDS}-second answer limit. Read at your own pace, then press Answer now for a 5-second countdown.</p>
+            <p className="small">Choose the answer limit before each round. Read at your own pace, then press Answer now for a 5-second countdown.</p>
             <p className="small">
               Only your latest session is saved on this device. Starting a new
               session replaces the previous one.
             </p>
             <div className="setup-divider" />
-            <label>
-              OpenRouter API key
-              <input
-                type="password"
-                value={apiKey}
-                placeholder="sk-or-…"
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(e) => setApiKey(e.target.value)}
-              />
-            </label>
-            <p className="small">
-              Used only for your review. Kept in this tab’s memory, never saved
-              with recordings. Transcripts and selected frames are sent to
-              OpenRouter and its model provider; usage is billed to your key.
-            </p>
-            <a
-              className="inline-link"
-              href="https://openrouter.ai/settings/keys"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Get an OpenRouter key <ArrowUpRight size={14} />
-            </a>
+            {accountFields}
             <div
               className={`service-status ${health?.transcription.available ? "ready" : ""}`}
             >
@@ -1045,7 +1047,7 @@ export default function App() {
                 const pending = pendingReview.current;
                 pendingReview.current = null;
                 setSettingsOpen(false);
-                if (screen === "review" && session && apiKey.trim() && pending) {
+                if (screen === "review" && session && hasAccount && pending) {
                   if (pending.kind === 'session') void gradeSession();
                   else void analyse(session, pending.onlyIndex, pending.refreshAll);
                 }

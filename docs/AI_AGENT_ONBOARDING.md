@@ -5,7 +5,7 @@ Use the first prompt to run the app. Use the second when you want to change it. 
 ## Get the app running
 
 ```text
-Set up https://github.com/vdfrz/Video-Interview-OSS locally for me.
+Set up https://github.com/vedantdas312-cell/Video-Interview-OSS locally for me.
 
 1. Clone the repo if needed. Read README.md, architecture.md, AGENTS.md,
    CONTRIBUTING.md, and docs/COACHING_RUBRIC.md. Preserve any existing work.
@@ -16,11 +16,11 @@ Set up https://github.com/vdfrz/Video-Interview-OSS locally for me.
 3. Run npm test and npm run build. Start npm run dev, check the local
    /api/health response, and open http://127.0.0.1:4310. Diagnose missing
    dependencies honestly; a successful build does not prove transcription.
-4. Explain the three-question flow: untimed reading, five-second countdown,
-   up to 60 seconds per answer, and feedback after the final answer.
-5. Let me enter my own OpenRouter key directly in Settings. Never ask for
+4. Explain how to choose a mode, round length, answer duration and attempts: untimed reading, five-second countdown,
+   the selected time per answer, and feedback after the final answer.
+5. Let me enter my own Publik or OpenRouter key directly in the app. Never ask for
    it in chat, put it in source, print it, or save it to a config file.
-   Explain that transcripts and selected stills go to OpenRouter/providers,
+   Explain that transcripts and selected stills go to the selected provider,
    while raw recordings are sent only to the local transcription service.
 6. Do not access my real camera, microphone, saved recordings, transcripts,
    or browser session for automated verification. Use empty screens or

@@ -4,11 +4,14 @@
  * Keep this bank local: external feedback requests should include only the
  * question selected for that attempt, never the complete `questions` array.
  */
+import { financeQuestions, MAX_QUESTIONS, type Mode } from "./modes";
+
 export type Question = {
   id: string;
   text: string;
   category: string;
-  sourcePage: number;
+  sourcePage?: number;
+  mode?: Mode;
   defaultEligible: boolean;
 };
 
@@ -227,14 +230,14 @@ const sessionCategories = [
  * Selection runs locally; callers should send only the returned question text
  * to any paid external service that needs question context.
  */
-export function selectSessionQuestions(): Question[] {
-  return sessionCategories.map((category) => {
-    const eligible = questions.filter(
-      (question) => question.category === category && question.defaultEligible,
-    );
-    if (eligible.length === 0) {
-      throw new Error(`No default-eligible questions found for ${category}`);
-    }
-    return eligible[Math.floor(Math.random() * eligible.length)];
+export function selectSessionQuestions(mode: Mode = "solicitor", count = 3): Question[] {
+  if (!Number.isInteger(count) || count < 1 || count > MAX_QUESTIONS) throw Error("Unsupported round length.");
+  const pools: Question[][] = mode === "solicitor"
+    ? sessionCategories.map(category => questions.filter(q => q.defaultEligible && q.category === category))
+    : [financeQuestions.filter(q => q.mode === mode)];
+  return Array.from({ length: count }, (_, index) => {
+    const pool = pools[index % pools.length];
+    const position = Math.floor(Math.random() * pool.length);
+    return pool.splice(position, 1)[0];
   });
 }

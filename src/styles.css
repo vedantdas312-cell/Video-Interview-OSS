@@ -1567,3 +1567,10 @@ main {
 .criterion-explained strong { font-size: 11px; font-weight: 600; color: #405635; }
 .criterion-explained p { margin-top: 4px; line-height: 1.75; }
 .rereview-session { display: block; margin: 0 0 18px auto; }
+
+.gate { max-width: 680px; margin: 10vh auto; padding: 20px; }
+.practice-fields { display: grid; gap: 16px; margin: 18px 0; }
+.practice-fields label { display: grid; gap: 6px; font-weight: 600; }
+.practice-fields select, .practice-fields input { width: 100%; padding: 10px; color: #193d34; background: white; border: 1px solid #a4b6aa; border-radius: 6px; font: inherit; }
+.practice-fields p { margin: 0; }
+.practice-fields a { text-decoration: underline; }

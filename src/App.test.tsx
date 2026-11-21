@@ -134,12 +134,19 @@ async function completeAnswer() {
   await flush();
 }
 
+async function select(label: string, value: string, scope: ParentNode = container) {
+  const field = Array.from(scope.querySelectorAll("label")).find(item => item.textContent?.trim().startsWith(label))?.querySelector("select");
+  if (!field) throw Error("Missing select " + label);
+  await act(async () => { field.value = value; field.dispatchEvent(new Event("change", {bubbles:true})); });
+}
+
 async function enterApiKey() {
   await click(container.querySelector<HTMLButtonElement>(
     'button[aria-label="Practice settings"]',
   )!);
   await flush();
-  const input = document.body.querySelector<HTMLInputElement>('input[type="password"]');
+  await select("Feedback account", "openrouter", document.querySelector('[role="dialog"]')!);
+  const input = document.querySelector('[role="dialog"]')!.querySelector<HTMLInputElement>('input[type="password"]');
   if (!input) throw new Error("API key input was not rendered");
   await act(async () => {
     const setter = Object.getOwnPropertyDescriptor(
@@ -154,6 +161,7 @@ async function enterApiKey() {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true;
   loadSessionMock.mockReset().mockResolvedValue(undefined);
@@ -215,6 +223,8 @@ describe("App session flow", () => {
   it("records three answers before opening review and persists all three", async () => {
     act(() => root.render(<App />));
     await flush();
+    await click(buttonByText("Continue"));
+    await click(buttonByText("Continue"));
     await click(buttonByText("Start practice"));
     await flush();
     await click(buttonByText("Begin question 1"));
@@ -228,13 +238,36 @@ describe("App session flow", () => {
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(["/api/health"]);
 
     await completeAnswer();
-    expect(container.textContent).toContain("Three answers. A good start.");
+    expect(container.textContent).toContain("Your next step, a little clearer.");
     expect(container.textContent).toContain("Answer 1");
     expect(container.textContent).toContain("Answer 2");
     expect(container.textContent).toContain("Answer 3");
     const lastSaved = saveSessionMock.mock.calls.at(-1)?.[0] as Session;
     expect(lastSaved.answers).toHaveLength(3);
-    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(["/api/health"]);
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/session-assess")).toHaveLength(1);
+  });
+
+  it("applies the selected mode, recording limit, attempts and question count to the round", async () => {
+    act(() => root.render(<App />)); await flush();
+    await click(buttonByText("Continue"));
+    await select("Interview mode","pe");
+    await click(buttonByText("Continue"));
+    await select("Questions per round","1");
+    await select("Time per answer","90");
+    await select("Attempts per question","2");
+    await click(buttonByText("Start practice"));
+    await click(buttonByText("Begin question 1"));
+    await completeAnswer();
+    expect(container.textContent).toContain("Attempt 1 of 2");
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/assess")).toHaveLength(0);
+    await click(buttonByText("Try again"));
+    await completeAnswer();
+    const round = saveSessionMock.mock.calls.at(-1)?.[0] as Session;
+    expect(round).toMatchObject({attempts:2, mode:"pe", answerSeconds:90});
+    expect(round.answers).toHaveLength(1);
+    expect(round.answers[0].question.id).toMatch(/^pe-/);
+    const call = fetchMock.mock.calls.find(([url]) => url === "/api/session-assess");
+    expect(JSON.parse(call![1].body)).toMatchObject({questionCount:1,provider:"publik-linked"});
   });
 
   it("resumes after answer two, waits until answer three to call APIs, and sends only selected question fields", async () => {
@@ -293,7 +326,7 @@ describe("App session flow", () => {
     await click(buttonByText("Delete permanently"));
 
     expect(deleteSavedSessionMock).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain("Start practice");
+    expect(container.textContent).toContain("Connect feedback");
     expect(document.body.textContent).not.toContain("Delete saved session");
   });
 

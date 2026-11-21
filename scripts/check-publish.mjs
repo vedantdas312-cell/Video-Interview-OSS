@@ -20,6 +20,7 @@ const textExtensions = new Set(['.md', '.ts', '.tsx', '.js', '.mjs', '.json', '.
 const textNames = new Set(['LICENSE', 'PRVIA-LICENSE', '.gitignore', '.nvmrc', '.env.example']);
 const secretPatterns = [
   ['OpenAI/OpenRouter-style credential', /\bsk-(?:or-v1-|proj-|svcacct-)?[A-Za-z0-9_-]{24,}\b/],
+  ['Publik account or publisher credential', /\b(?:pk_(?:live_)?|pbt_)[A-Za-z0-9_-]{20,}\b/],
   ['GitHub credential', /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})\b/],
   ['AWS access key', /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/],
   ['Google API key', /\bAIza[0-9A-Za-z_-]{35}\b/],

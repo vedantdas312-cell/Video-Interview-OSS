@@ -8,6 +8,7 @@ export interface Transcript {
   warnings?: string[];
 }
 export interface Assessment {
+  payment?: {message:string; url:string};
   score?: number | null;
   models?: { content?: string; visual?: string };
   rubric?: { version: string; path: string };
@@ -55,6 +56,10 @@ export interface SessionAssessment {
   limitations: string[];
 }
 export interface Session {
+  mode?: import("../data/modes").Mode;
+  attempts?: number;
+  pendingTake?: { answer: Answer; used: number };
+
   sessionAssessment?: SessionAssessment;
   sessionReviewError?: string;
   id: string;
@@ -120,6 +125,9 @@ export function clockTime(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
+export class PaymentRequired extends Error {
+  constructor(public payment: {message: string; url: string}) { super(payment.message); }
+}
 export async function jsonResponse<T>(response: Response): Promise<T> {
   let data;
   try {
@@ -129,6 +137,7 @@ export async function jsonResponse<T>(response: Response): Promise<T> {
       "The review service returned an unreadable response. Your recordings are still saved.",
     );
   }
+  if (response.status === 402 && data.error?.topUpUrl) throw new PaymentRequired({message: data.error.message, url: data.error.topUpUrl});
   if (!response.ok)
     throw new Error(
       typeof data.error === "string"

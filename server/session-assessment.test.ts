@@ -51,13 +51,19 @@ describe('whole-session practice grading', () => {
     expect(result.areas[3].evidence[0].kind).toBe('camera');
     expect(result.models.session).toBe(CONTENT_MODEL);
   });
+  it.each([1, 2, 4, 6])('grades the selected %i-question round', async (questionCount) => {
+    const sample = input();
+    const answers = Array.from({length:questionCount}, (_, i) => sample.answers[i % sample.answers.length]);
+    const result = await assessSession({...sample, answers, questionCount}, {fetchImpl:upstream()});
+    expect(result.overallScore).toBe(5);
+  });
   it('accepts public reviews with accumulated server and provider limitations', async () => {
     const saved = input();
     saved.answers.forEach(answer => { answer.assessment.limitations = Array.from({ length: 18 }, (_, i) => `Preserved limitation ${i}`); });
     const result = await assessSession(saved, { fetchImpl: upstream() });
     expect(result.overallScore).toBe(5);
   });
-  it('requires exactly three successful content reviews', async () => {
+  it('requires every expected review and preserves the three-question default for old clients', async () => {
     const incomplete = input(); incomplete.answers[0].assessment.contentStatus = 'failed';
     await expect(assessSession(incomplete)).rejects.toMatchObject({ code: 'SESSION_CONTENT_INCOMPLETE' });
     await expect(assessSession({ ...input(), answers: input().answers.slice(0, 2) })).rejects.toMatchObject({ code: 'INVALID_SESSION' });
