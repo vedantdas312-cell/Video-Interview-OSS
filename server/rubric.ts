@@ -9,6 +9,19 @@ for (const line of bank.split('\n')) {
   const match = line.match(/^\*\*(\d+a?)\.\*\* (.+)$/);
   if (match) questions.set(match[1], { id: match[1], text: match[2], category });
 }
+// Resolve answers saved before the published PE question bank was introduced.
+const earlierPE = [
+    "A founder-owned UK software company is seeking a buyout. Give your initial investment thesis and one reason to walk away.",
+    "A target reports strong EBITDA but little free cash flow. Which items would you investigate first?",
+    "A London fund is assessing a UK exporter with sterling costs and euro revenues. How would you stress-test the investment?",
+    "A business earns a third of its revenue from one customer. What evidence would you want before proposing a price?",
+    "How would higher refinancing costs affect a leveraged buyout if the exit multiple stays flat?",
+    "Choose one operating improvement for a newly acquired company. How would you measure progress before exit?",
+  ];
+earlierPE.forEach((text, i) => {
+  const id = `pe-${i+1}`;
+  questions.set(id, {id, text, category:modes.pe.name});
+});
 for (const q of financeQuestions) questions.set(q.id, q);
 export function getQuestion(id: string | number) {
   return questions.get(String(id));

@@ -3,7 +3,7 @@
 Read README.md and architecture.md before changing the app. See docs/AI_AGENT_ONBOARDING.md for setup and task prompts.
 
 - Use Node.js 24 and the existing React/TypeScript/Express/Python stack. Preserve unrelated edits.
-- Preserve the default three-question, 60-second round and the configured mode, duration, question count and attempts. Reading is untimed and the countdown is five seconds.
+- Preserve the default three-question, 60-second round and the configured mode, duration, question count and attempts. Reading is untimed. Show the question before camera access, then round controls under the live preview. Start the answer timer on the recording click.
 - Keep services on loopback. Public hosting requires a separate security and product design.
 - Manually pasted keys belong in tab memory. The Publik install credential belongs to the local server. Do not ask for keys in chat, store them, log them, or embed them in screenshots.
 - Do not inspect, copy, commit, or upload personal recordings, frames, transcripts, saved browser sessions, or private QA notes for automated testing. Use empty screens or clearly synthetic inputs.

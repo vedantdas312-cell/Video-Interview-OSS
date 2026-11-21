@@ -4,9 +4,9 @@ This document describes the implementation in this repository. It is a local, si
 
 ## 1. Product contract
 
-A session contains one to six distinct questions from the chosen mode. The solicitor default draws a motivation, competency and personal prompt. Reading is untimed. **Answer now** begins a five-second countdown, followed by the selected 30–180 second limit. The user can stop earlier. Feedback is shown after the final answer, not between questions.
+A session contains one to six distinct questions from the chosen mode. The solicitor default draws a motivation, competency and personal prompt. Reading is untimed. **Start recording** starts capture and the visible 30–180 second timer together. The user can stop earlier. Feedback is shown after the final answer, not between questions.
 
-`src/lib/timing.ts` owns timing constants. The round retains its selected time and question count across reloads. Older sessions default to one take. The default draw excludes questions marked as requiring unavailable context; the searchable library retains all 201 TCLA entries and 24 finance prompts.
+`src/lib/timing.ts` owns timing constants. The round retains its selected time and question count across reloads. Older sessions default to one take. The default draw excludes questions marked as requiring unavailable context; the searchable library retains all 201 TCLA entries and 30 finance prompts.
 
 Feedback concerns the answer and supported presentation observations. The system must not infer personality, emotion, honesty, identity, suitability, or hiring outcomes from a face or voice. Scores are coaching aids, not validated psychometric measurements.
 
@@ -52,13 +52,13 @@ The browser requests camera/microphone access only when starting setup. The serv
 | Path | Responsibility |
 |---|---|
 | `src/App.tsx` | Screen state, setup, session orchestration, persistence, analysis/retry, settings and library. |
-| `src/components/Recorder.tsx` | Preparation, countdown, MediaRecorder lifecycle, cap, still sampling, cleanup. |
+| `src/components/Recorder.tsx` | Preview, recording clock, MediaRecorder lifecycle, cap, still sampling, cleanup. |
 | `src/components/SessionReview.tsx` | Session report, content areas, camera section, priorities and evidence navigation. |
 | `src/components/AnswerReview.tsx` | Per-answer player, scores, observations, transcript evidence and download. |
 | `src/lib/capture.ts` | Supported MIME selection and unmirrored JPEG frame extraction. |
 | `src/lib/session.ts` | Client data types, IndexedDB adapter, time formatting and API response errors. |
 | `src/lib/feedback.ts` | Completeness checks and preservation of successful components across retries. |
-| `src/lib/timing.ts` | Fixed countdown and recording limits. |
+| `src/lib/timing.ts` | Default recording limit. |
 | `src/lib/test-camera.ts` | Development-only generated video with an optional local synthetic audio fixture. |
 | `src/data/questions.ts` | Client question bank, original source IDs, category/page mapping and draw eligibility. |
 | `src/data/rubrics.ts` | Reference criteria; not an active additional grading pipeline. |

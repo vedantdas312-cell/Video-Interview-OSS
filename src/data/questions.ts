@@ -11,6 +11,7 @@ export type Question = {
   text: string;
   category: string;
   sourcePage?: number;
+  source?: {label:string; url:string};
   mode?: Mode;
   defaultEligible: boolean;
 };

@@ -8,7 +8,6 @@ import {
   ArrowRight,
   Check,
   Camera,
-  Mic,
   Settings2,
   ShieldCheck,
   BookOpen,
@@ -51,22 +50,6 @@ const labels: Record<string, string> = {
 };
 const shortCategory = (c: string) => labels[c] || c;
 
-function Preview({ stream }: { stream: MediaStream | null }) {
-  const ref = useRef<HTMLVideoElement>(null);
-  useEffect(() => {
-    if (ref.current) ref.current.srcObject = stream;
-  }, [stream]);
-  return (
-    <video
-      ref={ref}
-      autoPlay
-      muted
-      playsInline
-      className="camera-preview"
-      aria-label="Camera preview"
-    />
-  );
-}
 function AudioMeter({ stream }: { stream: MediaStream | null }) {
   const [level, setLevel] = useState(0);
   useEffect(() => {
@@ -104,7 +87,11 @@ function AudioMeter({ stream }: { stream: MediaStream | null }) {
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("home");
-  const [session, setSession] = useState<Session | null>(null);
+  const [savedSession, setSession] = useState<Session | null>(null);
+  const [draft, setDraft] = useState<Session | null>(null);
+  const [pool, setPool] = useState<Session["questions"]>([]);
+  const session = draft ?? savedSession;
+  const cameraRequest = useRef(0);
   const [loaded, setLoaded] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -174,12 +161,14 @@ export default function App() {
       });
     return () => {
       active = false;
+      cameraRequest.current++;
       streamRef.current?.getTracks().forEach((t) => t.stop());
       analysisAbort.current?.abort();
     };
   }, []);
   const persist = async (s: Session) => {
     setSession(s);
+    setDraft(null);
     try {
       await saveSession(s);
     } catch {
@@ -208,11 +197,24 @@ export default function App() {
     }
   };
   const release = () => {
+    cameraRequest.current++;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     setStream(null);
   };
-  const setup = async (resume = false) => {
+  const openRound = (resume: boolean) => {
+    setError("");
+    setRetaking(false);
+    if (!resume) {
+      const choices = selectSessionQuestions(mode, MAX_QUESTIONS);
+      setPool(choices);
+      setDraft({id: crypto.randomUUID(), createdAt: new Date().toISOString(), questions: choices.slice(0, questionCount),
+        mode, attempts, answers: [], prepSeconds: 0, answerSeconds});
+    }
+    setScreen("setup");
+  };
+  const enableCamera = async () => {
+    const request = ++cameraRequest.current;
     if (busy.current) return;
     busy.current = true;
     setConnecting(true);
@@ -230,22 +232,10 @@ export default function App() {
         },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
+      if (request !== cameraRequest.current) { media.getTracks().forEach(track => track.stop()); return; }
       streamRef.current = media;
       setStream(media);
-      if (!resume) {
-        const next: Session = {
-          id: crypto.randomUUID(),
-          createdAt: new Date().toISOString(),
-          questions: selectSessionQuestions(mode, questionCount),
-          mode, attempts,
-          answers: [],
-          prepSeconds: 0,
-          answerSeconds,
-        };
-        await persist(next);
-      }
-      setRetaking(false);
-      setScreen("setup");
+      setScreen("interview");
     } catch (e) {
       release();
       setError(
@@ -403,6 +393,7 @@ export default function App() {
   const nav = (next: Screen) => {
     if (working || screen === "interview") return;
     release();
+    setDraft(null);
     if (next === "home") setStep(1);
     setScreen(next);
     setError("");
@@ -485,7 +476,7 @@ export default function App() {
                 <em>Make them yours.</em>
               </h1>
               <p>
-                Choose a role, set your round, and practise on camera with
+                Choose a field, preview your camera, and practise with
                 <br className="desktop-break" /> feedback
                 you can actually use.
               </p>
@@ -496,30 +487,20 @@ export default function App() {
                 {unfinished && session ? <><h2>Continue your round</h2>
                   <p>{modes[session.mode ?? "solicitor"].name} · {session.questions.length} questions · {session.answerSeconds}s per answer</p></> :
                   <>
-                    <h2>{["Connect feedback", "Choose your interview", "Set up your round"][step - 1]}</h2>
+                    <h2>{["Connect feedback", "Choose your field"][step - 1]}</h2>
                     {step === 1 && accountFields}
                     {step === 2 && <div className="practice-fields"><label>Interview mode
                       <select aria-label="Interview mode" value={mode} onChange={e => setMode(e.target.value as Mode)}>
                         {Object.entries(modes).map(([id, item]) => <option key={id} value={id}>{item.name}</option>)}
                       </select></label>
-                      <p>{mode === "solicitor" ? "Questions from the TCLA practice bank." : "Original practice prompts based on public preparation material. Actual interview questions vary."} <a href={modes[mode].url} target="_blank" rel="noreferrer">{modes[mode].source}</a></p>
-                    </div>}
-                    {step === 3 && <div className="practice-fields">
-                      <p>{modes[mode].name}</p>
-                      <label>Questions per round<select aria-label="Questions per round" value={questionCount} onChange={e => setQuestionCount(Number(e.target.value))}>
-                        {Array.from({length: MAX_QUESTIONS}, (_, i) => <option key={i+1}>{i+1}</option>)}</select></label>
-                      <label>Time per answer<select aria-label="Time per answer" value={answerSeconds} onChange={e => setAnswerSeconds(Number(e.target.value))}>
-                        {[30,60,90,120,180].map(n => <option value={n} key={n}>{n} seconds</option>)}</select></label>
-                      <label>Attempts per question<select aria-label="Attempts per question" value={attempts} onChange={e => setAttempts(Number(e.target.value))}>
-                        {[1,2,3].map(n => <option key={n}>{n}</option>)}</select></label>
-                      <p>The first recording counts as one attempt. Only the take you keep goes into your review.</p>
+                      <p>{mode === "solicitor" ? "Questions from the TCLA practice bank." : mode === "pe" ? "Practise questions adapted from London candidate reports and published private equity interview banks." : "Original practice prompts based on public preparation material. Actual interview questions vary."} <a href={modes[mode].url} target="_blank" rel="noreferrer">{modes[mode].source}</a></p>
                     </div>}
                     {step > 1 && <button className="text-button" onClick={() => setStep(step-1)}>Back</button>}
                   </>}
                 <button
                   className="primary start-button"
                   disabled={!loaded || connecting || (!unfinished && !hasAccount)}
-                  onClick={() => unfinished || step === 3 ? void setup(unfinished) : setStep(step+1)}
+                  onClick={() => unfinished || step === 2 ? openRound(unfinished) : setStep(step+1)}
                 >
                   {connecting ? (
                     <>
@@ -528,7 +509,7 @@ export default function App() {
                     </>
                   ) : (
                     <>
-                      {unfinished ? "Continue your session" : step === 3 ? "Start practice" : "Continue"}
+                      {unfinished ? "Continue your session" : step === 2 ? "Open practice" : "Continue"}
                       <ArrowRight size={18} />
                     </>
                   )}
@@ -536,7 +517,7 @@ export default function App() {
                 <p className="small centered">
                   {unfinished
                     ? `${session!.answers.length} of ${session!.questions.length} answers saved on this device.`
-                    : step === 3 ? "Camera and microphone access comes next." : ""}
+                    : step === 2 ? "Read the first question before enabling your camera." : ""}
                 </p>
                 {session && session.answers.length === session.questions.length && (
                   <>
@@ -623,58 +604,13 @@ export default function App() {
             <button className="text-button" onClick={() => nav("home")}>
               ← Back to practice
             </button>
-            <div className="page-heading">
-              <span className="eyebrow">A QUICK CHECK</span>
-              <h1>Make yourself comfortable.</h1>
-              <p>Find your frame, check your microphone, and take a breath.</p>
+            <div className="question-heading">
+              <span className="eyebrow">{modes[session.mode ?? "solicitor"].name} · Question {session.answers.length + 1}</span>
+              <h1>{session.questions[session.answers.length].text}</h1>
+              {session.questions[session.answers.length].source && <p className="small">Adapted from <a href={session.questions[session.answers.length].source!.url} target="_blank" rel="noreferrer">{session.questions[session.answers.length].source!.label}</a></p>}
             </div>
-            <div className="setup-grid">
-              <div className="preview-wrap">
-                <Preview stream={stream} />
-                <span className="preview-caption">
-                  <Camera size={14} /> Camera preview · mirrored
-                </span>
-              </div>
-              <div className="setup-details">
-                <div className="check-row">
-                  <Check size={18} />
-                  <div>
-                    <strong>Your camera is connected</strong>
-                    <p>Keep your face comfortably in the frame.</p>
-                  </div>
-                </div>
-                <div className="check-row">
-                  <Mic size={18} />
-                  <div>
-                    <strong>Say a few words</strong>
-                    <p>The bars should move when you speak.</p>
-                    <AudioMeter stream={stream} />
-                  </div>
-                </div>
-                <div className="setup-divider" />
-                <h3>Here’s what happens next</h3>
-                <p>
-                  Your round has {session.questions.length} {session.questions.length === 1 ? "question" : "questions"}. You have{" "}
-                  as much time as you need to read. Press Answer now for a 5-second countdown, then answer for up to {session.answerSeconds} seconds. Recording stops automatically at the limit.
-                </p>
-                <p>You’ll see your feedback after the final answer.</p>
-                <button
-                  className="primary"
-                  onClick={() => {
-                    setScreen("interview");
-                    setError("");
-                  }}
-                >
-                  Begin question {session.answers.length + 1}
-                  <ArrowRight size={18} />
-                </button>
-                <p className="small">
-                  {hasAccount
-                    ? "AI review is ready after your last answer."
-                    : "You can choose a feedback account in Settings."}
-                </p>
-              </div>
-            </div>
+            <section className="camera-off"><Camera size={32}/><p>Camera is off</p></section>
+            <button className="primary start-button" disabled={connecting} onClick={() => void enableCamera()}>{connecting ? "Connecting camera…" : "Enable camera and microphone"}</button>
           </section>
         )}
         {screen === "interview" && session && stream && (
@@ -701,6 +637,7 @@ export default function App() {
                 className="text-button"
                 onClick={() => {
                   release();
+                  setDraft(null);
                   setScreen("home");
                 }}
               >
@@ -715,12 +652,14 @@ export default function App() {
                 )}
               </span>
               <h1>{session.questions[session.answers.length].text}</h1>
+              {session.questions[session.answers.length].source && <p className="small">Adapted from <a href={session.questions[session.answers.length].source!.url} target="_blank" rel="noreferrer">{session.questions[session.answers.length].source!.label}</a></p>}
             </div>
             {session.pendingTake && !retaking ? <section className="session-card"><h2>Keep this take?</h2>
               <p>Attempt {session.pendingTake.used} of {session.attempts} recorded. A new take replaces this one when it finishes.</p>
               <button className="primary" onClick={() => void acceptTake(session.pendingTake!.answer)}>Use this take</button>
               <button className="text-button" onClick={() => setRetaking(true)}>Try again</button>
             </section> : <Recorder
+              onStart={() => { if (draft) { setSession(draft); setDraft(null); } }}
               answerSeconds={session.answerSeconds}
               key={`${session.id}-${session.answers.length}`}
               stream={stream}
@@ -728,9 +667,24 @@ export default function App() {
               onError={(message) => {
                 setError(message);
                 release();
+                setDraft(null);
                 setScreen("home");
               }}
-            />}
+            >
+              <div className="preview-mic"><span>Microphone level</span><AudioMeter stream={stream} /></div>
+              {draft && <div className="round-controls practice-fields">
+                <fieldset><legend>Recording duration</legend><div className="duration-options">
+                  {[30,60,90,120,180].map(seconds => <button type="button" key={seconds} aria-pressed={draft.answerSeconds === seconds}
+                    onClick={() => {setAnswerSeconds(seconds); setDraft({...draft, answerSeconds:seconds});}}>{seconds}s</button>)}
+                </div></fieldset>
+                <label>Questions per round<select aria-label="Questions per round" value={draft.questions.length} onChange={event => {
+                  const n = Number(event.target.value); setQuestionCount(n); setDraft({...draft, questions:pool.slice(0,n)});
+                }}>{Array.from({length:MAX_QUESTIONS},(_,i) => <option key={i+1}>{i+1}</option>)}</select></label>
+                <label>Attempts per question<select aria-label="Attempts per question" value={draft.attempts} onChange={event => {
+                  const n = Number(event.target.value); setAttempts(n); setDraft({...draft, attempts:n});
+                }}>{[1,2,3].map(n => <option key={n}>{n}</option>)}</select></label>
+              </div>}
+            </Recorder>}
             <p className="interview-footnote">
               <ShieldCheck size={14} /> No feedback between questions. Take this
               one at a time. Leaving keeps completed answers and discards the current recording.
@@ -894,7 +848,7 @@ export default function App() {
               <span className="eyebrow">THE QUESTION BANK</span>
               <h1>A little less unexpected.</h1>
               <p>
-                Solicitor questions come from TCLA. Finance questions are original practice prompts based on the sources below.
+                Solicitor questions come from TCLA. Private equity questions are adapted from published interview banks and London candidate reports. The other finance modes use original prompts based on employer guidance.
               </p>
             </div>
             <div className="library-filters">
@@ -931,7 +885,7 @@ export default function App() {
                     <span className="eyebrow">{q.category}</span>
                     <h3>{q.text}</h3>
                     <p>
-                      {q.mode ? <a href={modes[q.mode].url} target="_blank" rel="noreferrer">{modes[q.mode].source}</a> : `TCLA · page ${q.sourcePage}`}
+                      {q.source ? <a href={q.source.url} target="_blank" rel="noreferrer">Adapted from {q.source.label}</a> : q.mode ? <a href={modes[q.mode].url} target="_blank" rel="noreferrer">{modes[q.mode].source}</a> : `TCLA · page ${q.sourcePage}`}
                       {!q.defaultEligible
                         ? " · Explore independently; not in the default session pool"
                         : ""}
@@ -978,7 +932,7 @@ export default function App() {
             <Dialog.Close className="close-modal" aria-label="Close settings">
               <X size={20} />
             </Dialog.Close>
-            <p className="small">Choose the answer limit before each round. Read at your own pace, then press Answer now for a 5-second countdown.</p>
+            <p className="small">Choose the answer limit before each round. Read at your own pace, then press Start recording.</p>
             <p className="small">
               Only your latest session is saved on this device. Starting a new
               session replaces the previous one.

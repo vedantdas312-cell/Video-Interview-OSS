@@ -1,3 +1,5 @@
+import { getQuestion } from "../../server/rubric";
+import { privateEquityQuestions } from "./private-equity";
 import { describe, expect, it } from "vitest";
 import { questions, selectSessionQuestions } from "./questions";
 
@@ -51,4 +53,17 @@ describe("question bank", () => {
       expect(excludedPersonalContextIds.has(session[2].id)).toBe(false);
     }
   });
+});
+
+
+it("draws traceable PE questions and resolves saved questions with their original wording", () => {
+  expect(privateEquityQuestions).toHaveLength(12);
+  for (const q of privateEquityQuestions) {
+    expect(q.source.url).toMatch(/^https:/);
+    expect(getQuestion(q.id)?.text).toBe(q.text);
+  }
+  const selected = selectSessionQuestions("pe", 6);
+  expect(new Set(selected.map(q => q.id)).size).toBe(6);
+  expect(selected.every(q => q.source)).toBe(true);
+  expect(getQuestion("pe-2")?.text).toContain("little free cash flow");
 });

@@ -16,7 +16,7 @@ Set up https://github.com/vedantdas312-cell/Video-Interview-OSS locally for me.
 3. Run npm test and npm run build. Start npm run dev, check the local
    /api/health response, and open http://127.0.0.1:4310. Diagnose missing
    dependencies honestly; a successful build does not prove transcription.
-4. Explain how to choose a mode, round length, answer duration and attempts: untimed reading, five-second countdown,
+4. Explain how to choose a mode, round length, answer duration and attempts: untimed reading, camera preview, visible recording timer,
    the selected time per answer, and feedback after the final answer.
 5. Let me enter my own Publik or OpenRouter key directly in the app. Never ask for
    it in chat, put it in source, print it, or save it to a config file.

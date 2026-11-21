@@ -1,10 +1,11 @@
+import { privateEquityQuestions } from "./private-equity.ts";
 // Original practice prompts based on the preparation topics linked for each mode.
 export const modes = {
   solicitor: { name: "Solicitor training contract", source: "TCLA question bank", url: "https://www.thecorporatelawacademy.com/" },
   blackrock: { name: "BlackRock", source: "BlackRock EMEA student recruiting", url: "https://careers.blackrock.com/students-and-graduates-emea" },
   jpm: { name: "J.P. Morgan", source: "JPMorganChase interview preparation", url: "https://careers.jpmorgan.com/us/en/how-we-hire/interview-tips" },
   goldman: { name: "Goldman Sachs", source: "Goldman Sachs student recruiting", url: "https://www.goldmansachs.com/careers/students" },
-  pe: { name: "London private equity", source: "BVCA investment deal process syllabus", url: "https://www.bvca.co.uk/asset/2F874208-6B64-4477-BB0330BA6FE07795/" },
+  pe: { name: "London private equity", source: "Wall Street Prep interview bank", url: "https://www.wallstreetprep.com/knowledge/25-private-equity-interview-questions-you-must-know/" },
 } as const;
 export type Mode = keyof typeof modes;
 export const MAX_QUESTIONS = 6;
@@ -33,18 +34,13 @@ const prompts = {
     "Tell us about an unfamiliar problem you broke into smaller parts. What did you solve first?",
     "Which recent business development would you discuss with a client, and what would you ask them?",
   ],
-  pe: [
-    "A founder-owned UK software company is seeking a buyout. Give your initial investment thesis and one reason to walk away.",
-    "A target reports strong EBITDA but little free cash flow. Which items would you investigate first?",
-    "A London fund is assessing a UK exporter with sterling costs and euro revenues. How would you stress-test the investment?",
-    "A business earns a third of its revenue from one customer. What evidence would you want before proposing a price?",
-    "How would higher refinancing costs affect a leveraged buyout if the exit multiple stays flat?",
-    "Choose one operating improvement for a newly acquired company. How would you measure progress before exit?",
-  ],
-} satisfies Record<Exclude<Mode, "solicitor">, string[]>;
-export const financeQuestions = Object.entries(prompts).flatMap(([key, texts]) => {
+
+} satisfies Record<Exclude<Mode, "solicitor" | "pe">, string[]>;
+const employerQuestions = Object.entries(prompts).flatMap(([key, texts]) => {
   const mode = key as Exclude<Mode, "solicitor">;
   return texts.map((text, index) => ({
     id: `${mode}-${index + 1}`, text, category: modes[mode].name, mode, defaultEligible: true,
   }));
 });
+
+export const financeQuestions = [...employerQuestions, ...privateEquityQuestions];

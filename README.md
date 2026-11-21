@@ -29,12 +29,12 @@ More product views: [feedback and replay evidence](docs/screenshots/feedback-evi
 ## What it does
 
 - **Choose your round:** 1–6 questions, 1–3 attempts per question and 30, 60, 90, 120 or 180 seconds per answer. The solicitor default draws motivation, experience and personal prompts.
-- **Time to think:** read at your own pace, then start a five-second countdown and record until your selected limit.
+- **Time to think:** read at your own pace, then start recording. An on-camera timer shows how long you have left.
 - **Feedback after the session:** review relevance, examples, reasoning, structure, and supported camera observations.
 - **Evidence you can replay:** feedback points to actual transcript segments or sampled camera frames.
 - **Local speech transcription:** faster-whisper runs on your computer through Python and ffmpeg.
 - **Save and retry:** keep the latest session in the browser, download answers, and retry failed analysis without re-recording.
-- **Question library:** 201 TCLA entries plus 24 original finance practice questions. Each finance mode links to its employer’s recruiting material or the BVCA investment syllabus.
+- **Question library:** 201 TCLA entries plus 18 employer practice prompts and 12 private equity questions adapted from candidate reports and published interview banks. Each PE prompt links to its source.
 
 ## Quick start
 
@@ -63,7 +63,7 @@ Open **[http://127.0.0.1:4310](http://127.0.0.1:4310)**. The local API runs on p
 
 1. Sign in with Publik in your browser. The app links its installation credential to your account.
 2. Choose the linked account or enter a personal Publik or OpenRouter key. The key field includes a link to the provider dashboard.
-3. Choose an interview mode, question count, answer duration and attempts. Start practice, allow camera and microphone access, then check the preview.
+3. Choose your field and read the first question. Enable your camera and microphone. Under the preview, choose the duration, questions per round and attempts. Press Start recording when ready.
 4. Record each answer. With multiple attempts you can keep the current take or replace it. The last permitted take advances automatically.
 5. Review the feedback after the final answer, replay the evidence and download any recordings you want to keep.
 

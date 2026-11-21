@@ -25,14 +25,15 @@ vi.mock("./components/Recorder", async () => {
   const ReactModule = await import("react");
   return {
     default: ({
-      onComplete,
+      onComplete, children,
     }: {
+      children?: React.ReactNode;
       onComplete: (result: {
         blob: Blob;
         duration: number;
         frames: { timestamp: number; dataUrl: string }[];
       }) => void;
-    }) =>
+    }) => ReactModule.createElement(ReactModule.Fragment, null, children,
       ReactModule.createElement(
         "button",
         {
@@ -48,7 +49,7 @@ vi.mock("./components/Recorder", async () => {
             }),
         },
         "Complete mock recording",
-      ),
+      )),
   };
 });
 
@@ -224,10 +225,9 @@ describe("App session flow", () => {
     act(() => root.render(<App />));
     await flush();
     await click(buttonByText("Continue"));
-    await click(buttonByText("Continue"));
-    await click(buttonByText("Start practice"));
+    await click(buttonByText("Open practice"));
     await flush();
-    await click(buttonByText("Begin question 1"));
+    await click(buttonByText("Enable camera"));
 
     await completeAnswer();
     expect(container.textContent).toContain("QUESTION 2 OF 3");
@@ -251,12 +251,15 @@ describe("App session flow", () => {
     act(() => root.render(<App />)); await flush();
     await click(buttonByText("Continue"));
     await select("Interview mode","pe");
-    await click(buttonByText("Continue"));
+    await click(buttonByText("Open practice"));
+    expect(container.textContent).toContain("Camera is off");
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    const firstQuestion = container.querySelector(".question-heading h1")?.textContent;
+    await click(buttonByText("Enable camera"));
     await select("Questions per round","1");
-    await select("Time per answer","90");
+    await click(buttonByText("90s"));
     await select("Attempts per question","2");
-    await click(buttonByText("Start practice"));
-    await click(buttonByText("Begin question 1"));
+    expect(container.querySelector(".question-heading h1")?.textContent).toBe(firstQuestion);
     await completeAnswer();
     expect(container.textContent).toContain("Attempt 1 of 2");
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/assess")).toHaveLength(0);
@@ -280,7 +283,7 @@ describe("App session flow", () => {
     await enterApiKey();
     await click(buttonByText("Continue your session"));
     await flush();
-    await click(buttonByText("Begin question 3"));
+    await click(buttonByText("Enable camera"));
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(["/api/health"]);
 
     await completeAnswer();
