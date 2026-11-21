@@ -209,7 +209,7 @@ The overall score averages the three numeric content-area scores, excluding came
 | Active assessment routes | Three shared slots across answer and session requests. |
 | Python subprocess | 300 seconds, 2,000,000-byte output buffer. |
 | ffmpeg decode | 45 seconds. |
-| Provider attempt | 60 seconds (120 for Publik round synthesis); at most two attempts for HTTP 429/5xx. |
+| Provider attempt | 60 seconds (120 for Publik reviews); at most two attempts for HTTP 429/5xx. |
 | HTTP server | 360-second request timeout; 15-second header timeout. |
 
 The provider timeout is per attempt, not a fixed whole-session deadline. Health confirms installed executable/import availability, not downloaded weights, model quality, API credit, or future provider success.

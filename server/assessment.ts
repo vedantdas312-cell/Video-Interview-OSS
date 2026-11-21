@@ -117,7 +117,7 @@ export async function assess(input: unknown, options: { fetchImpl?: Fetch; timeo
   const models = request.provider === 'publik' ? publikModels : ANALYSIS_MODELS;
   const rubric = getRubric(question.category);
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-  const timeoutMs = options.timeoutMs ?? 60_000;
+  const timeoutMs = options.timeoutMs ?? (request.provider === 'publik' ? 120_000 : 60_000);
   const outputShape = {
     summary: 'Detailed overview of this answer.', strengths: [],
     improvements: ['Concrete next-attempt action with a quote or reference to an evidenced criterion.'],
