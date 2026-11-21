@@ -1,5 +1,6 @@
+import { MAX_QUESTIONS } from "../src/data/modes.ts";
 import { z, ZodError } from 'zod';
-import { ApiError, completion, coachingBoundary } from './assessment.ts';
+import { ApiError, completion, coachingBoundary, publikModels } from './assessment.ts';
 import { CONTENT_MODEL, contentSchema, transcriptSchema, validateEvidence, practiceMean, practiceRating } from './schema.ts';
 import { getQuestion, getRubric } from './rubric.ts';
 import { COACHING_RUBRIC, COACHING_RUBRIC_METADATA } from './coaching.ts';
@@ -21,16 +22,18 @@ const savedAssessment = contentSchema.extend({
   rubric: z.object({ version: z.string().max(100), path: z.string().max(200) }).strict().optional(),
 }).strict();
 const requestSchema = z.object({
+  questionCount: z.number().int().min(1).max(MAX_QUESTIONS).default(3),
+  provider: z.enum(['publik','openrouter']).default('openrouter'),
   apiKey: z.string().trim().min(10).max(256).regex(/^[A-Za-z0-9_-]+$/),
   answers: z.array(z.object({ question: z.object({ id: z.union([z.string().max(20), z.number().int()]),
     text: z.string().max(3000), category: z.string().max(200) }).strict(),
     assessment: savedAssessment, transcript: transcriptSchema.optional(),
-  }).strict()).length(3),
-}).strict();
+  }).strict()).min(1).max(MAX_QUESTIONS),
+}).strict().refine(data => data.answers.length === data.questionCount);
 const providerSchema = z.object({ summary: line, overallRating: rating,
   areas: z.array(z.object({ name: z.enum(SESSION_AREAS), rating,
     score: z.number().int().min(0).max(10).nullable(), whatWorked: line, whatToImprove: line,
-    feedback: line, evidence: z.array(z.object({ evidenceId: z.number().int().nonnegative().max(83) }).strict()).max(5),
+    feedback: line, evidence: z.array(z.object({ evidenceId: z.number().int().nonnegative().max(MAX_QUESTIONS * 28 - 1) }).strict()).max(5),
   }).strict()).length(4), priorities: z.array(line).min(1).max(3), limitations: z.array(line).max(8),
 }).strict();
 type Evidence = { answerIndex: number; timestamp: number; quote: string; kind: 'transcript' | 'camera' };
@@ -40,13 +43,13 @@ export async function assessSession(input: unknown, options: {
 } = {}) {
   if (options.signal?.aborted) throw new ApiError(499, 'REQUEST_CANCELLED', 'Session review stopped. Saved answer feedback is preserved.');
   const parsed = requestSchema.safeParse(input);
-  if (!parsed.success) throw new ApiError(400, 'INVALID_SESSION', 'Provide exactly three completed answer reviews for the session assessment.');
+  if (!parsed.success) throw new ApiError(400, 'INVALID_SESSION', 'Provide all completed answer reviews for the session assessment.');
   const evidence: Evidence[] = [];
   const limits: string[] = [];
   const answers = parsed.data.answers.map((answer, answerIndex) => {
     const question = getQuestion(answer.question.id);
     if (!question || answer.assessment.contentStatus === 'failed') {
-      throw new ApiError(400, 'SESSION_CONTENT_INCOMPLETE', 'All three answers need successful content feedback before grading the session.');
+      throw new ApiError(400, 'SESSION_CONTENT_INCOMPLETE', 'All answers need successful content feedback before grading the session.');
     }
     const names = getRubric(question.category).map(criterion => criterion.name);
     const assessment = answer.assessment;
@@ -86,16 +89,17 @@ export async function assessSession(input: unknown, options: {
       segments: answer.transcript.segments } : undefined, summary: assessment.summary, strengths: assessment.strengths,
       improvements: assessment.improvements, contentCriteria, cameraObservations, limitations: assessment.limitations };
   });
-  const outputShape = { summary: 'Two-sentence overview of the complete three-answer session.', overallRating: 'developing',
+  const outputShape = { summary: 'Two-sentence overview of the complete practice session.', overallRating: 'developing',
     areas: SESSION_AREAS.map(name => ({ name, rating: 'developing', feedback: 'What worked, what did not, why it matters and a useful adjustment.',
       score: 'An independently chosen integer 0–10, or null when not assessable', whatWorked: 'Specific supported aspect, or no clear strength demonstrated.', whatToImprove: 'Specific change for the next attempt.',
       evidence: [{ evidenceId: 0 }] })), priorities: ['Most useful action for the next session.'], limitations: [] };
+  const model = parsed.data.provider === 'publik' ? publikModels.content : CONTENT_MODEL;
   let provider;
   try {
-    const raw = await completion(parsed.data.apiKey, CONTENT_MODEL, [
-      { role: 'system', content: `${coachingBoundary}\nGrade this complete THREE-ANSWER practice session using the server-loaded coaching Markdown:\n${COACHING_RUBRIC}\nAssess the overall answer content first: relevance, examples/reasoning and structure. Camera presentation is a separate fourth area and must use only supplied camera observations, not imagined video. This is a numerical practice grade, not a hiring prediction. Do not force praise. Give a balanced account of what works, what does not, why and how to improve. Preserve distinctions between question categories. Do not invent experiences or contradictions. Each area must include an integer score from0to10 using the Markdown anchors, or null when there is insufficient evidence; whatWorked names the specific useful aspect or states that no clear strength was demonstrated; whatToImprove is a concrete next step; feedback explains why. The server derives ratings from scores and the overall content score from the three content areas only; do not output an overallScore. Ratings must be strong, developing, needs_work or not_assessable. Return exactly this shape: ${JSON.stringify(outputShape)}. Include each named area once. A rated area needs at least one supplied evidenceId. Content areas must use transcript evidence IDs; camera presentation must use camera IDs. If no supported camera evidence exists, use not_assessable with empty evidence for that area and do not penalise the overall content grade for missing camera input. Select IDs only; never generate quotes, timestamps or answer indices. The server attaches their exact saved sources. Overall grade should reflect the three content areas. Keep the summary to two sentences, area feedback focused, and at most three concrete priorities. About 300–450 words total is enough. Do not print evidenceId, segmentId or frameId identifiers in human-facing prose. State that this synthesizes completed reviews; you did not hear audio or inspect new video.` },
+    const raw = await completion(parsed.data.apiKey, model, [
+      { role: 'system', content: `${coachingBoundary}\nGrade this complete ${answers.length}-answer practice session using the server-loaded coaching Markdown:\n${COACHING_RUBRIC}\nAssess the overall answer content first: relevance, examples/reasoning and structure. Camera presentation is a separate fourth area and must use only supplied camera observations, not imagined video. This is a numerical practice grade, not a hiring prediction. Do not force praise. Give a balanced account of what works, what does not, why and how to improve. Preserve distinctions between question categories. Do not invent experiences or contradictions. Each area must include an integer score from0to10 using the Markdown anchors, or null when there is insufficient evidence; whatWorked names the specific useful aspect or states that no clear strength was demonstrated; whatToImprove is a concrete next step; feedback explains why. The server derives ratings from scores and the overall content score from the three content areas only; do not output an overallScore. Ratings must be strong, developing, needs_work or not_assessable. Return exactly this shape: ${JSON.stringify(outputShape)}. Include each named area once. A rated area needs at least one supplied evidenceId. Content areas must use transcript evidence IDs; camera presentation must use camera IDs. If no supported camera evidence exists, use not_assessable with empty evidence for that area and do not penalise the overall content grade for missing camera input. Select IDs only; never generate quotes, timestamps or answer indices. The server attaches their exact saved sources. Overall grade should reflect the three content areas. Keep the summary to two sentences, area feedback focused, and at most three concrete priorities. About 300–450 words total is enough. Do not print evidenceId, segmentId or frameId identifiers in human-facing prose. State that this synthesizes completed reviews; you did not hear audio or inspect new video.` },
       { role: 'user', content: JSON.stringify({ answers, evidence: evidence.map((item, evidenceId) => ({ evidenceId, ...item })) }) },
-    ], options.fetchImpl ?? globalThis.fetch, options.timeoutMs ?? 60_000, options.signal, z.toJSONSchema(providerSchema));
+    ], options.fetchImpl ?? globalThis.fetch, options.timeoutMs ?? (parsed.data.provider === "publik" ? 120_000 : 60_000), options.signal, z.toJSONSchema(providerSchema), parsed.data.provider);
     provider = providerSchema.parse(raw);
   } catch (error) {
     if (error instanceof ApiError) throw error;
@@ -121,7 +125,7 @@ export async function assessSession(input: unknown, options: {
   });
   const overallScore = practiceMean(areas.filter(area => area.name !== 'Camera presentation').map(area => area.score));
   return { ...provider, areas, overallScore, overallRating: practiceRating(overallScore), limitations: [...new Set([...provider.limitations, ...limits,
-    'This practice grade synthesizes the three completed answer reviews; it does not verify the truth of claims or predict a hiring outcome.',
+    'This practice grade synthesizes the completed answer reviews; it does not verify the truth of claims or predict a hiring outcome.',
     'Transcript evidence is automatically transcribed. Camera evidence quotes an earlier model observation of a sampled image, not the candidate’s spoken words or continuous behaviour.'])],
-    models: { session: CONTENT_MODEL }, rubric: COACHING_RUBRIC_METADATA };
+    models: { session: model }, rubric: COACHING_RUBRIC_METADATA };
 }

@@ -65,7 +65,7 @@ export default function SessionReview({
       <div className="session-review__overview">
         <div className="session-review__overview-heading">
           <div>
-            <span className="eyebrow">ACROSS YOUR THREE ANSWERS</span>
+            <span className="eyebrow">ACROSS YOUR ROUND</span>
             <h2 id="session-review-title">Your overall grade</h2>
           </div>
           <div className={`session-review__score is-${review.overallRating}`}>
@@ -87,7 +87,7 @@ export default function SessionReview({
 
       <section className="session-review__priorities" aria-labelledby="session-review-priorities">
         <span className="eyebrow">WHAT TO TRY NEXT</span>
-        <h3 id="session-review-priorities">Three useful next steps</h3>
+        <h3 id="session-review-priorities">Next steps</h3>
         <ol>
           {review.priorities.map((priority, index) => (
             <li key={`${index}-${priority}`}>

@@ -1,12 +1,12 @@
 # Video Interview OSS architecture
 
-This document describes the implementation in this repository. It is a local, single-user interview practice app: a React browser client, an Express service on loopback, a Python transcription subprocess, and external model calls through OpenRouter. There is no hosted account system, server-side session database, agent framework, or background job service.
+This document describes the implementation in this repository. It is a local, single-user interview practice app: a React browser client, an Express service on loopback, a Python transcription subprocess, and external model calls through Publik or OpenRouter. There is no hosted account system, server-side session database, agent framework, or background job service.
 
 ## 1. Product contract
 
-A session contains exactly three questions: motivation for commercial law, competency/experience, and a personal prompt. Reading is untimed. **Answer now** begins a five-second countdown, followed by at most 60 seconds of recording. The user can stop earlier. Feedback is shown after all three answers, not between questions.
+A session contains one to six distinct questions from the chosen mode. The solicitor default draws a motivation, competency and personal prompt. Reading is untimed. **Start recording** starts capture and the visible 30–180 second timer together. The user can stop earlier. Feedback is shown after the final answer, not between questions.
 
-`src/lib/timing.ts` owns timing constants. Resuming a legacy session does not restore older timing choices. The default draw excludes questions marked as requiring unavailable context; the searchable library retains all 201 entries.
+`src/lib/timing.ts` owns timing constants. The round retains its selected time and question count across reloads. Older sessions default to one take. The default draw excludes questions marked as requiring unavailable context; the searchable library retains all 201 TCLA entries and 30 finance prompts.
 
 Feedback concerns the answer and supported presentation observations. The system must not infer personality, emotion, honesty, identity, suitability, or hiring outcomes from a face or voice. Scores are coaching aids, not validated psychometric measurements.
 
@@ -33,7 +33,7 @@ flowchart TB
     API -->|Validated feedback| UI
   end
   subgraph External[External services]
-    OR[OpenRouter]
+    OR[Publik or OpenRouter]
     TEXT[Configured content model]
     VISION[Configured vision model]
     OR --> TEXT
@@ -45,20 +45,20 @@ flowchart TB
 
 Development uses Vite on `127.0.0.1:4310`, proxying `/api` to Express on 4311. In production mode Express serves `dist/` and the API together on 4311. That is a local production build; this service is not ready to be exposed to a public network.
 
-The browser requests camera/microphone access only when starting setup. The server receives raw media for local transcription. OpenRouter receives the assessment key, textual inputs, and image data for the relevant calls, but no raw recording. Whisper model weights may download on first use. CSS also imports Google Fonts, so loading the UI may contact Google's font services.
+The browser requests camera/microphone access only when starting setup. The server receives raw media for local transcription. The selected provider receives its assessment key, textual inputs, and image data for the relevant calls, but no raw recording. Whisper model weights may download on first use. CSS also imports Google Fonts, so loading the UI may contact Google's font services.
 
 ## 3. Repository map
 
 | Path | Responsibility |
 |---|---|
 | `src/App.tsx` | Screen state, setup, session orchestration, persistence, analysis/retry, settings and library. |
-| `src/components/Recorder.tsx` | Preparation, countdown, MediaRecorder lifecycle, cap, still sampling, cleanup. |
+| `src/components/Recorder.tsx` | Preview, recording clock, MediaRecorder lifecycle, cap, still sampling, cleanup. |
 | `src/components/SessionReview.tsx` | Session report, content areas, camera section, priorities and evidence navigation. |
 | `src/components/AnswerReview.tsx` | Per-answer player, scores, observations, transcript evidence and download. |
 | `src/lib/capture.ts` | Supported MIME selection and unmirrored JPEG frame extraction. |
 | `src/lib/session.ts` | Client data types, IndexedDB adapter, time formatting and API response errors. |
 | `src/lib/feedback.ts` | Completeness checks and preservation of successful components across retries. |
-| `src/lib/timing.ts` | Fixed countdown and recording limits. |
+| `src/lib/timing.ts` | Default recording limit. |
 | `src/lib/test-camera.ts` | Development-only generated video with an optional local synthetic audio fixture. |
 | `src/data/questions.ts` | Client question bank, original source IDs, category/page mapping and draw eligibility. |
 | `src/data/rubrics.ts` | Reference criteria; not an active additional grading pipeline. |
@@ -70,29 +70,32 @@ The browser requests camera/microphone access only when starting setup. The serv
 | `server/rubric.ts` | Canonical server question lookup and category-specific criteria. |
 | `server/coaching.ts` | Load the shared coaching Markdown and expose its version. |
 | `server/assessment.ts` | Independent content and image requests, provider errors and per-answer feedback. |
-| `server/session-assessment.ts` | Validate and synthesize three completed answer reviews. |
+| `server/session-assessment.ts` | Validate and synthesize the completed answer reviews. |
 | `Practice_Interview_Question_Bank.md` | Runtime server question source. Must ship with the server. |
 | `docs/COACHING_RUBRIC.md` | Runtime prompt instructions. Must ship with the server. |
 | `scripts/check-publish.mjs` | Check staged/tracked content before publication. |
 
 ## 4. Browser state and persistence
 
-The five top-level screens are `home`, `setup`, `interview`, `review`, and `library`. Navigation is managed through React state rather than a URL router. The parent owns the MediaStream; recorder cleanup does not stop parent-owned tracks. Leaving practice or finishing question three releases them.
+The Express startup runs the Publik sign-in gate before access to practice APIs. The React root waits for the linked installation before loading the app. Personal keys stay in tab memory. The install key stays on the local server. Publik uses publik-balanced for text and vision, with the sampled images bounded to fit the request.
+
+The five top-level screens are `home`, `setup`, `interview`, `review`, and `library`. Navigation is managed through React state rather than a URL router. The parent owns the MediaStream; recorder cleanup does not stop parent-owned tracks. Leaving practice or finishing the last question releases them.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Home
+  [*] --> PublikSignIn
+  PublikSignIn --> Home: Linked installation
   Home --> Library: Browse questions
   Library --> Home: Practice
   Home --> Setup: Start or resume
   Setup --> Interview: Begin
-  Interview --> Interview: Save answer 1 or 2
-  Interview --> Review: Save answer 3 and release devices
+  Interview --> Interview: Keep an answer or retake
+  Interview --> Review: Keep final answer and release devices
   Review --> Review: Transcribe, assess, retry, or replay
   Review --> Setup: New session
 ```
 
-The `Session` object includes an ID, creation timestamp, three questions, answers, timing fields, and optional session feedback/error. Each `Answer` holds the question, recording Blob, measured duration, sampled frames, optional transcript and assessment, and an error message.
+The `Session` object includes an ID, creation timestamp, selected mode, attempt limit, questions, answers, timing fields, and optional session feedback/error. Each `Answer` holds the question, recording Blob, measured duration, sampled frames, optional transcript and assessment, and an error message.
 
 `saveSession` writes the complete object to the `sessions` object store under key `current` in IndexedDB database `rehearsal-local`. This legacy internal name remains for compatibility. Only one session is retained. There is no automatic cloud backup, cross-device sync, or historical progress database. Reloading loads the saved session, but does not restore the API key.
 
@@ -106,7 +109,7 @@ The browser asks for an ideal 1280×720 user-facing camera stream and microphone
 
 `capture.ts` selects a supported WebM or MP4 MIME type via `MediaRecorder.isTypeSupported`. The recorder collects chunks with a one-second timeslice and assembles a Blob on stop. Timer and device failures are surfaced rather than silently producing a successful answer.
 
-The preview is mirrored through CSS. Captured frames use the original video pixels, so they remain unmirrored. Each frame is a JPEG with a maximum dimension of 640 pixels at quality 0.82, paired with elapsed recording time. The recorder samples about every two seconds at the current cap, includes the initial/final moments, and limits the array to 32 frames. It adapts the sampling interval for longer limits, though the product currently fixes answers at 60 seconds.
+The preview is mirrored through CSS. Captured frames use the original video pixels, so they remain unmirrored. Each frame is a JPEG with a maximum dimension of 640 pixels at quality 0.82, paired with elapsed recording time. The recorder samples about every two seconds at the current cap, includes the initial/final moments, and limits the array to 32 frames. It adapts the sampling interval for longer limits, with limits configured per round.
 
 Before assessment, the client omits frames beyond the duration reported by decoded audio. This matters when browser time and container/audio duration differ. Visual feedback can locate a sampled moment; it cannot establish continuous movement or the onset/duration of a gesture.
 
@@ -117,8 +120,8 @@ sequenceDiagram
   participant B as Browser
   participant S as Local API
   participant P as Python / Whisper
-  participant O as OpenRouter
-  B->>B: Record and save three answers
+  participant O as Selected provider
+  B->>B: Record and save selected takes
   loop Each answer needing review
     B->>S: POST /api/transcribe (unless transcript saved)
     S->>P: Decode and transcribe temporary recording
@@ -134,13 +137,13 @@ sequenceDiagram
     B->>B: Merge and save successful components
   end
   B->>S: POST /api/session-assess
-  S->>O: Three reviews and permitted evidence IDs
+  S->>O: Round reviews and permitted evidence IDs
   O-->>S: Session areas and priorities
   S-->>B: Materialized evidence and computed grade
   B->>B: Save session report
 ```
 
-Answers are processed sequentially in the client after the third recording. Content and vision are independent requests with independent error handling; the current server executes the content request first, then vision. A content failure does not prevent an attempted camera review unless processing is cancelled.
+Answers are processed sequentially in the client after the last recording. Content and vision are independent requests with independent error handling; the current server executes the content request first, then vision. A content failure does not prevent an attempted camera review unless processing is cancelled.
 
 ### Local transcription
 
@@ -148,7 +151,7 @@ Availability checks import `faster_whisper` in a candidate interpreter and execu
 
 A promise queue allows only one ASR subprocess at a time. The API admits at most three transcription requests, including queued work. Each recording is written with mode `0600` under an OS temporary directory. Python creates another temporary directory for PCM audio. Normal success and error paths clean both up; an abrupt OS/process termination can leave temporary artifacts.
 
-ffmpeg decodes mono, 16 kHz, signed 16-bit PCM using local file/pipe protocols. It extracts at most 601 seconds so inputs exceeding the supported 600-second backend limit can be rejected. The UI's 60-second cap is stricter. Whisper uses the `base` model on CPU with int8, word timestamps, and voice activity filtering. The TIPS word-gap splitter produces review segments.
+ffmpeg decodes mono, 16 kHz, signed 16-bit PCM using local file/pipe protocols. It extracts at most 601 seconds so inputs exceeding the supported 600-second backend limit can be rejected. The UI's maximum 180-second cap is stricter. Whisper uses the `base` model on CPU with int8, word timestamps, and voice activity filtering. The TIPS word-gap splitter produces review segments.
 
 WPM equals transcribed word count divided by the entire recording duration, multiplied by 60. Pause count counts internal word gaps of at least 1.5 seconds. Neither is an estimate of confidence or fluency. Transcription and segment boundaries can be wrong; replay remains essential.
 
@@ -164,11 +167,11 @@ WPM equals transcribed word count divided by the entire recording duration, mult
 
 These are implementation settings, not a guarantee of external availability. The legacy `model` request field accepts only the vision model; it does not let a browser select an arbitrary content model. The server chooses routing constants.
 
-The server resolves the question ID from the Markdown bank. Submitted wording, category, and optional rubric cannot substitute their own instructions. Each content assessment uses three common criteria plus one category-specific criterion from `server/rubric.ts`. Both prompts load `docs/COACHING_RUBRIC.md`.
+The server resolves the question ID from the TCLA Markdown bank or shared finance catalog. Submitted wording, category, and optional rubric cannot substitute their own instructions. Each content assessment uses three common criteria plus one category-specific criterion from `server/rubric.ts`. Both prompts load `docs/COACHING_RUBRIC.md`.
 
 The content call receives canonical question data, transcript segments with stable IDs, and local pacing estimates. It receives neither audio nor images. The vision call receives ordered frames and frame IDs, not the transcript or raw recording. Both instruct the model to treat input content as evidence rather than instructions.
 
-Requests use JSON schema output, temperature 0.2, a maximum output token budget of 8000, and `provider: { data_collection: 'deny', require_parameters: true }`. Content requests ask for low reasoning effort. Response healing is explicitly disabled. There is no application model fallback or LLM repair pass.
+OpenRouter requests use JSON schema output, temperature 0.2, a maximum output token budget of 8000, and `provider: { data_collection: 'deny', require_parameters: true }`. Content requests ask for low reasoning effort. Response healing is explicitly disabled. There is no application model fallback or LLM repair pass.
 
 ### Evidence and grades
 
@@ -180,11 +183,11 @@ Criterion scores are integers 0–10 or null when unassessable. Ratings are deri
 
 ### Session synthesis
 
-The session endpoint requires exactly three completed content reviews. It validates their criteria/evidence against included transcripts where supplied. Legacy saved feedback without transcripts is accepted with an explicit limitation. Camera observations in saved reviews are client-supplied records, not cryptographically authenticated evidence.
+The session endpoint requires one completed content review per selected question (1–6, legacy default 3). It validates their criteria/evidence against included transcripts where supplied. Legacy saved feedback without transcripts is accepted with an explicit limitation. Camera observations in saved reviews are client-supplied records, not cryptographically authenticated evidence.
 
 The server builds a deduplicated evidence table and asks the content model for four areas: relevance, examples and reasoning, structure, and camera presentation. Each rated area must cite existing evidence IDs of the correct kind. The server restores source answer indices, text, and timestamps.
 
-The overall score averages the three numeric content-area scores, excluding camera presentation. This is a new session synthesis, not simply the mean of the three per-answer scores. Missing camera evidence does not reduce the content grade. Session synthesis receives prior camera observations as text; it does not inspect new images or hear audio.
+The overall score averages the three numeric content-area scores, excluding camera presentation. This is a new session synthesis, not simply the mean of per-answer scores. Missing camera evidence does not reduce the content grade. Session synthesis receives prior camera observations as text; it does not inspect new images or hear audio.
 
 ## 7. API surface and limits
 
@@ -193,7 +196,7 @@ The overall score averages the three numeric content-area scores, excluding came
 | `GET /api/health` | None | Local dependency readiness, model constants and rubric metadata. |
 | `POST /api/transcribe` | One multipart file named `recording` | Transcript text, ordered segments, decoded duration, metrics and warnings. |
 | `POST /api/assess` | Key, allowed model, question ID/details, transcript, up to 32 frames | Content/camera status, criterion feedback, observations, evidence, metrics and limitations. |
-| `POST /api/session-assess` | Key and exactly three question/assessment records; optional underlying transcripts | Four areas, evidence links, priorities, computed content score and limitations. |
+| `POST /api/session-assess` | Key and one question/assessment record per selected question; optional underlying transcripts | Four areas, evidence links, priorities, computed content score and limitations. |
 
 | Resource | Limit |
 |---|---|
@@ -206,7 +209,7 @@ The overall score averages the three numeric content-area scores, excluding came
 | Active assessment routes | Three shared slots across answer and session requests. |
 | Python subprocess | 300 seconds, 2,000,000-byte output buffer. |
 | ffmpeg decode | 45 seconds. |
-| Provider attempt | 60 seconds; at most two attempts for HTTP 429/5xx. |
+| Provider attempt | 60 seconds (120 for Publik reviews); at most two attempts for HTTP 429/5xx. |
 | HTTP server | 360-second request timeout; 15-second header timeout. |
 
 The provider timeout is per attempt, not a fixed whole-session deadline. Health confirms installed executable/import availability, not downloaded weights, model quality, API credit, or future provider success.
@@ -227,7 +230,7 @@ The service binds to `127.0.0.1`. Host headers must name `localhost` or `127.0.0
 
 These are local-app protections, not user authentication. Non-browser local clients can call the API without an Origin header. A hostile process on the same computer, a compromised browser/extension, or someone with access to the browser profile is outside this isolation model. Do not expose the service through a public tunnel or bind it to all interfaces without designing authentication, TLS, quotas, storage isolation, consent, and retention controls.
 
-The key exists in tab memory, request bodies to the local API, and the OpenRouter authorization header. It is not intentionally written to IndexedDB, disk, or logs. Browser developer tools and process memory can still observe it. The browser stores recordings and frames without application-level encryption.
+A manually entered key exists in tab memory, request bodies to the local API, and the chosen provider’s authorization header. It is not intentionally written to IndexedDB, disk, or logs. Browser developer tools and process memory can still observe it. The browser stores recordings and frames without application-level encryption.
 
 Git publication is a separate boundary. `.gitignore` excludes media, secrets, source PDFs, QA artifacts and local state. `check-publish.mjs` checks the exact Git index, permits only named product screenshots as binary assets, and detects common credential formats. It cannot prove the absence of every secret or identify a person in a screenshot; human inspection and an independent secret scan remain part of release review. A leaked committed secret must be revoked, not merely deleted from the latest tree.
 
@@ -238,7 +241,7 @@ Git publication is a separate boundary. `.gitignore` excludes media, secrets, so
 | `TRANSCRIBE_PYTHON` | Explicit Python executable containing faster-whisper; set in the launching shell. |
 | `FFMPEG_PATH` | Explicit ffmpeg executable; otherwise `ffmpeg` on PATH. |
 | `NODE_ENV=production` | Serve the built frontend from Express. Set by `npm start`. |
-| OpenRouter key | Enter through Settings. No server-wide key variable. |
+| OpenRouter key | Enter through Settings. |
 | Models | Constants in `server/schema.ts`; changes require validation of request/output compatibility. |
 | Ports | Currently fixed by npm scripts, Vite proxy configuration and server entrypoint. |
 

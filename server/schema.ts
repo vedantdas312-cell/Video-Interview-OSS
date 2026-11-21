@@ -29,6 +29,7 @@ export const transcriptSchema = z.object({
   }
 });
 export const assessmentRequestSchema = z.object({
+  provider: z.enum(['publik','openrouter']).default('openrouter'),
   apiKey: z.string().trim().min(10).max(256).regex(/^[A-Za-z0-9_-]+$/),
   model: z.enum(APPROVED_MODELS).default(DEFAULT_MODEL),
   question: z.object({ id: z.union([z.string().max(20), z.number().int()]),

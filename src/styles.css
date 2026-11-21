@@ -1508,20 +1508,6 @@ main {
 }
 
 .tcla-recorder__preview-frame { position: relative; }
-.tcla-recorder__count-in {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: rgb(12 30 24 / 68%);
-  color: white;
-  pointer-events: none;
-}
-.tcla-recorder__count-in span { font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase; }
-.tcla-recorder__count-in strong { font-size: clamp(64px, 15vw, 120px); font-weight: 500; line-height: 1.2; }
-
 /* Evidence-first feedback: replay alongside concise, separate review sections. */
 .session-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 24px 0; }
 .session-overview > button { display: flex; flex-direction: column; gap: 8px; text-align: left; padding: 20px; background: #f5f5ed; border: 1px solid var(--border); border-radius: 10px; }
@@ -1567,3 +1553,23 @@ main {
 .criterion-explained strong { font-size: 11px; font-weight: 600; color: #405635; }
 .criterion-explained p { margin-top: 4px; line-height: 1.75; }
 .rereview-session { display: block; margin: 0 0 18px auto; }
+
+.gate { max-width: 680px; margin: 10vh auto; padding: 20px; }
+.practice-fields { display: grid; gap: 16px; margin: 18px 0; }
+.practice-fields label { display: grid; gap: 6px; font-weight: 600; }
+.practice-fields select, .practice-fields input { width: 100%; padding: 10px; color: #193d34; background: white; border: 1px solid #a4b6aa; border-radius: 6px; font: inherit; }
+.practice-fields p { margin: 0; }
+.practice-fields a { text-decoration: underline; }
+.camera-off { display: grid; place-content: center; justify-items: center; background: #172626; color: #fff; aspect-ratio: 16/9; border-radius: 12px; }
+.camera-clock, .rec-badge { position: absolute; top: 12px; padding: 6px 12px; border-radius: 6px; color: white; font-variant-numeric: tabular-nums; }
+.camera-clock { right: 12px; background: #15201deb; font-size: 1.45rem; line-height: 1.2; }
+.rec-badge { left: 12px; background: #ac2525; font-size: .8rem; font-weight: 700; }
+.round-controls { padding: 0 20px; box-sizing: border-box; grid-column: 1 / -1; grid-template-columns: repeat(2,minmax(0,1fr)); width: 100%; }
+.round-controls fieldset { grid-column: 1 / -1; margin: 0; padding: 0; border: 0; }
+.round-controls legend { font-weight: 600; margin-bottom: 6px; }
+.duration-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.duration-options button { flex: 1; padding: 8px; border: 1px solid #8aa497; border-radius: 6px; background: white; }
+.duration-options button[aria-pressed="true"] { background: #214f42; color: white; }
+.tcla-recorder__controls .tcla-recorder__finish { background: #a7232b; color: white; }
+
+.preview-mic { display: flex; align-items: center; gap: 12px; padding: 12px 20px 0; font-size: .85rem; }

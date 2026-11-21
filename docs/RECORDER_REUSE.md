@@ -60,4 +60,4 @@ The adapted implementation is distributed under the package's MIT terms:
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 
-Current timing: reading is untimed. Answer now begins a five-second visual countdown without capturing an answer. The recorder then starts a fixed 60-second timer and stops automatically, or the user may finish earlier. Timing choices from old saved sessions cannot override these constants.
+Reading is untimed. The candidate sees the first question, enables the camera and chooses the recording duration. Start recording begins capture and the visible answer timer together. Recording stops at the selected limit or when the candidate presses Stop recording.

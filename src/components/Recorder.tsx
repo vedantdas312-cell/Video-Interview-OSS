@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { captureFrame, CapturedFrame, createStreamRecorder } from '../lib/capture';
-import { ANSWER_SECONDS, COUNTDOWN_SECONDS } from '../lib/timing';
+import { ANSWER_SECONDS } from '../lib/timing';
 
 export type RecorderResult = {
   blob: Blob;
@@ -11,11 +11,14 @@ export type RecorderResult = {
 
 type RecorderProps = {
   stream: MediaStream;
+  answerSeconds?: number;
+  children?: ReactNode;
+  onStart?: () => void;
   onComplete: (result: RecorderResult) => void;
   onError: (message: string) => void;
 };
 
-type Phase = 'preparing' | 'countdown' | 'recording' | 'finishing' | 'complete' | 'error';
+type Phase = 'preparing' | 'recording' | 'finishing' | 'complete' | 'error';
 
 const FRAME_INTERVAL_MS = 2_000;
 const MAX_FRAMES = 32;
@@ -33,13 +36,15 @@ function formatClock(seconds: number): string {
  */
 export default function Recorder({
   stream,
+  answerSeconds = ANSWER_SECONDS,
+  children, onStart,
   onComplete,
   onError,
 }: RecorderProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
-  const countdownIntervalRef = useRef<number | null>(null);
   const frameIntervalRef = useRef<number | null>(null);
+  const clockIntervalRef = useRef<number | null>(null);
   const autoStopTimeoutRef = useRef<number | null>(null);
   const phaseRef = useRef<Phase>('preparing');
   const mountedRef = useRef(false);
@@ -51,11 +56,11 @@ export default function Recorder({
   const chunksRef = useRef<Blob[]>([]);
   const recordingStartedAtRef = useRef(0);
   const recordingEndedAtRef = useRef(0);
-  const handlersRef = useRef({ onComplete, onError });
-  handlersRef.current = { onComplete, onError };
+  const handlersRef = useRef({ onComplete, onError, onStart });
+  handlersRef.current = { onComplete, onError, onStart };
 
   const [phase, setPhase] = useState<Phase>('preparing');
-  const [remainingSeconds, setRemainingSeconds] = useState(COUNTDOWN_SECONDS);
+  const [remainingSeconds, setRemainingSeconds] = useState(answerSeconds);
   const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
@@ -75,10 +80,7 @@ export default function Recorder({
     }
 
     const clearTimers = () => {
-      if (countdownIntervalRef.current !== null) {
-        window.clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
-      }
+      if (clockIntervalRef.current !== null) { window.clearInterval(clockIntervalRef.current); clockIntervalRef.current = null; }
       if (frameIntervalRef.current !== null) {
         window.clearInterval(frameIntervalRef.current);
         frameIntervalRef.current = null;
@@ -163,7 +165,7 @@ export default function Recorder({
     stopRecordingRef.current = stopRecording;
 
     const startRecording = () => {
-      if (phaseRef.current !== 'countdown' || failedRef.current || completedRef.current) return;
+      if (phaseRef.current !== 'preparing' || failedRef.current || completedRef.current) return;
       clearTimers();
       chunksRef.current = [];
       framesRef.current = [];
@@ -203,11 +205,12 @@ export default function Recorder({
         // The upstream recorder starts MediaRecorder with a timeslice so chunks
         // arrive during recording; keep that behavior for browser-safe assembly.
         recorder.start(1_000);
+        handlersRef.current.onStart?.();
         recordingStartedAtRef.current = Date.now();
         recordingEndedAtRef.current = 0;
         phaseRef.current = 'recording';
         setPhase('recording');
-        const duration = ANSWER_SECONDS;
+        const duration = answerSeconds;
         setRemainingSeconds(Math.ceil(duration));
 
         const sampleIntervalMs = Math.max(
@@ -251,7 +254,7 @@ export default function Recorder({
           }, 100);
         }
         autoStopTimeoutRef.current = window.setTimeout(stopRecording, duration * 1_000);
-        countdownIntervalRef.current = window.setInterval(() => {
+        clockIntervalRef.current = window.setInterval(() => {
           const elapsed = (Date.now() - recordingStartedAtRef.current) / 1000;
           setRemainingSeconds(Math.max(0, Math.ceil(duration - elapsed)));
         }, 200);
@@ -259,22 +262,11 @@ export default function Recorder({
         fail(error instanceof Error ? error.message : 'Could not start the recording.');
       }
     };
-    startRecordingRef.current = () => {
-      if (phaseRef.current !== 'preparing' || failedRef.current || completedRef.current) return;
-      phaseRef.current = 'countdown';
-      setPhase('countdown');
-      setRemainingSeconds(COUNTDOWN_SECONDS);
-      const countdownStartedAt = Date.now();
-      countdownIntervalRef.current = window.setInterval(() => {
-        const elapsed = (Date.now() - countdownStartedAt) / 1000;
-        setRemainingSeconds(Math.max(1, Math.ceil(COUNTDOWN_SECONDS - elapsed)));
-      }, 100);
-      autoStopTimeoutRef.current = window.setTimeout(startRecording, COUNTDOWN_SECONDS * 1000);
-    };
+    startRecordingRef.current = startRecording;
 
     phaseRef.current = 'preparing';
     setPhase('preparing');
-    setRemainingSeconds(COUNTDOWN_SECONDS);
+    setRemainingSeconds(answerSeconds);
 
     return () => {
       mountedRef.current = false;
@@ -294,16 +286,14 @@ export default function Recorder({
       endedTracks.forEach((track) => track.removeEventListener('ended', handleTrackEnded));
       if (video) video.srcObject = null;
     };
-  }, [stream]);
+  }, [stream, answerSeconds]);
 
-  const startCountdown = () => startRecordingRef.current();
+  const startAnswer = () => startRecordingRef.current();
   const finishEarly = () => stopRecordingRef.current();
 
   let statusText = '';
   if (phase === 'preparing') {
-    statusText = 'Read the question. Press Answer now when you’re ready.';
-  } else if (phase === 'countdown') {
-    statusText = `Recording starts in ${remainingSeconds}`;
+    statusText = 'Preview · camera and microphone are on';
   } else if (phase === 'recording') {
     statusText = `Time remaining: ${formatClock(remainingSeconds)}`;
   } else if (phase === 'finishing') {
@@ -324,27 +314,25 @@ export default function Recorder({
           style={{ transform: 'scaleX(-1)' }}
           aria-label="Muted camera preview"
         />
-        {phase === 'countdown' && (
-          <div className="tcla-recorder__count-in" aria-hidden="true">
-            <span>Get ready</span>
-            <strong>{remainingSeconds}</strong>
-          </div>
-        )}
+        {phase === 'recording' && <span className="rec-badge">● REC</span>}
+        <span className="camera-clock" role="timer" aria-label="Answer time remaining">
+          {formatClock(phase === 'preparing' ? answerSeconds : remainingSeconds)}
+        </span>
       </div>
-
+      {phase === 'preparing' && children}
       <p className="tcla-recorder__countdown" aria-live="polite">
         {phase === 'error' ? errorMessage : statusText}
       </p>
 
       <div className="tcla-recorder__controls">
         {phase === 'preparing' && (
-          <button className="tcla-recorder__start" type="button" onClick={startCountdown}>
-            Answer now
+          <button className="tcla-recorder__start" type="button" onClick={startAnswer}>
+            Start recording
           </button>
         )}
         {phase === 'recording' && (
           <button className="tcla-recorder__finish" type="button" onClick={finishEarly}>
-            Finish answer
+            Stop recording
           </button>
         )}
       </div>
